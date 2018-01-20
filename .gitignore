@@ -1,0 +1,5 @@
+CHAMP.egg-info
+
+*.pyc
+.ipynb_checkpoints
+.idea
