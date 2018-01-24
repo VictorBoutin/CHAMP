@@ -10,7 +10,8 @@ def DisplayDico(dico):
     fig = plt.figure(figsize=(10,(nb_dico//10+1)), subplotpars=subplotpars)
     for i, each_filter in enumerate(out_dico):
         ax = fig.add_subplot(nb_dico//10+1,10,i+1)
-        ax.imshow(each_filter, cmap='gray')
+        cmax = np.abs(each_filter.max())
+        ax.imshow(each_filter, cmap='gray', vmin=-cmax, vmax=cmax)
         ax.set_xticks(())
         ax.set_yticks(())
 
