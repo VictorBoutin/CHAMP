@@ -1,5 +1,6 @@
 # CHAMP
-## Requirement :
+## Requirements
+
 Running the CHAMP library requires to have installed the following package :
 
 - numpy
@@ -17,9 +18,9 @@ pip3 install http://download.pytorch.org/whl/torch-0.3.0.post4-cp36-cp36m-macosx
 pip3 install torchvision
 ```
 
-## Installation
-To Install the CHAMP library, only move where the setup.py is and type : 
+## Developper's installation
 
+To install the CHAMP library, only move where the setup.py is and type :
 
 ```
 pip3 install -e .
