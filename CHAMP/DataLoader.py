@@ -117,7 +117,7 @@ def GenerateRound(dico, sigma=0.8, style='Gaussian'):
         radius = torch.sqrt(X_grid**2 + Y_grid**2)
         mask = torch.exp(-0.5*radius**2/(R+3)**2/sigma**2)
         binary_mask = (radius < R+1).type(torch.FloatTensor)
-        mask = mask*binary_mask    
+        mask = mask*binary_mask
     mask = Variable(mask.unsqueeze(0).unsqueeze(1).expand_as(dico))
 
     return mask
