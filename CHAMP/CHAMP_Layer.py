@@ -136,8 +136,7 @@ class CHAMP_Layer:
                 if doSym == True:
                     _, m_ind = torch.max(torch.abs(ConvMod), 0)
                 else:
-                    _, m_ind = torch.max(ConvMod, 0)
-
+                    _, m_ind = torch.max(ConvMod * (ConvMod>0), 0)
                 indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
                 m_value = Conv_one_image[m_ind]
                 c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[0] - 1, dico_shape[1] - 1]
