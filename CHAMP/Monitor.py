@@ -9,8 +9,13 @@ def DisplayDico(dico):
     out_dico = dico.data.numpy().reshape(-1,dico_size[0],dico_size[1])
     fig = plt.figure(figsize=(10,(nb_dico//10+1)), subplotpars=subplotpars)
     for i, each_filter in enumerate(out_dico):
+        #print(each_filter.shape)
+        each_filter /= np.abs(each_filter).max()
+        #cmax = np   .max(each_filter)
+        #cmin = np.min(each_filter)
         ax = fig.add_subplot(nb_dico//10+1,10,i+1)
-        ax.imshow(each_filter, cmap='gray')
+        ax.imshow(each_filter, cmap='gray', vmin=-1, vmax=1)
+        #ax.imshow(each_filter, cmap='gray')
         ax.set_xticks(())
         ax.set_yticks(())
 
