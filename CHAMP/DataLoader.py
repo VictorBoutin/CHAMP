@@ -14,8 +14,8 @@ from CHAMP.DataTools import Decorrelate2
 
 def GenerateGabor(nb_dico, dico_size):
     dico_size = tuple(dico_size)
-    params = {'ksize':dico_size, 'sigma':0.6,'lambd':15.0,
-                  'gamma':0.02, 'psi':0, 'ktype':cv2.CV_32F}
+    params = {'ksize':dico_size, 'sigma':1,'lambd':5,
+                  'gamma':0.5, 'psi':0, 'ktype':cv2.CV_32F}
 
     dico_gabor = Variable(torch.Tensor(nb_dico,1,dico_size[0],dico_size[1]))
     for i in range(nb_dico):
@@ -117,7 +117,7 @@ def GenerateRound(dico, sigma=0.8, style='Gaussian'):
         radius = torch.sqrt(X_grid**2 + Y_grid**2)
         mask = torch.exp(-0.5*radius**2/(R+3)**2/sigma**2)
         binary_mask = (radius < R+1).type(torch.FloatTensor)
-        mask = mask*binary_mask    
+        mask = mask*binary_mask
     mask = Variable(mask.unsqueeze(0).unsqueeze(1).expand_as(dico))
 
     return mask

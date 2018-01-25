@@ -20,7 +20,8 @@ Initialization parameters :
 
 class CHAMP_Layer():
     def __init__(self, l0_sparseness=10, sigma=None, nb_dico=30, dico_size=(13,13)
-                , verbose=0, doSym=False, FilterStyle='Gaussian',MaskMod='Residual'):
+                , verbose=0, doSym=False, FilterStyle='Gaussian',MaskMod='Residual'\
+                ,learning='Hebbian'):
 
         self.nb_dico = nb_dico
         self.dico_size = dico_size
@@ -32,6 +33,7 @@ class CHAMP_Layer():
         self.doSym = doSym
         self.FilterStyle=FilterStyle
         self.MaskMod = MaskMod
+        self.learning = learning
 
 
     def RunLayer(self, dataset, dictionary):
@@ -44,29 +46,39 @@ class CHAMP_Layer():
             coding_list.append((code,label))
         return coding_list
 
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=0.01, nb_record=5):
+    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=0.01, nb_record=5,dico_init=None):
         self.nb_epoch = nb_epoch
         self.eta = eta
         self.eta_homeo = eta_homeo
-        self.dictionary = np.random.rand(self.nb_dico,1,self.dico_size[0],self.dico_size[1])
-        self.dictionary = Normalize(Variable(torch.FloatTensor(self.dictionary)))
+        if dico_init is None :
+            self.dictionary = np.random.rand(self.nb_dico,1,self.dico_size[0],self.dico_size[1])
+            self.dictionary = Normalize(Variable(torch.FloatTensor(self.dictionary)))
+        else :
+            self.dictionary = Normalize(dico_init)
         if self.sigma is not None :
             mask = GenerateRound(self.dictionary,sigma=self.sigma, style=self.FilterStyle)
+
         else :
             mask = Variable(torch.ones(self.dictionary.size()))
+        #mask = GenerateRound(self.dictionary,sigma=0.8, style='Gaussian')
+        #self.dictionary = Normalize(self.dictionary*mask)
+
         self.activation = torch.zeros(self.nb_dico)
         self.res_list = list()
+        self.gradient = list()
         modulation = torch.ones(self.nb_dico)
         tic = time.time()
         nb_applied_dico = 10
         first_epoch = 1
         for i_epoch in range(self.nb_epoch):
             for i,image in enumerate(data_set[0]) :
-                code, res, nb_activation, residual_patch = self.CodingCHAMP(image, self.dictionary, \
+                code, res, nb_activation, residual_patch,reconstructed_image, residual_image = self.CodingCHAMP(image, self.dictionary, \
                                             l0_sparseness=self.l0_sparseness, modulation=modulation,train=True, \
                                             doSym=self.doSym,sigma=self.sigma, style=self.FilterStyle)
-                self.dictionary.data.add_(residual_patch.mul_(self.eta).view(self.dictionary.size()))
-                self.dictionary = Normalize(self.dictionary)
+                if self.learning == 'Hebbian':
+                    self.dictionary.data.add_(residual_patch.mul_(self.eta).view(self.dictionary.size()))
+                    self.dictionary = Normalize(self.dictionary)
+
                 self.res_list.append(res)
                 self.activation += nb_activation
                 if eta_homeo is not None :
@@ -78,7 +90,7 @@ class CHAMP_Layer():
                     tic, first_epoch = time.time(),  i_epoch+1
         self.dictionary = torch.mul(self.dictionary, mask)
         self.trained=True
-        return self.dictionary
+        return self.dictionary, reconstructed_image, residual_image
 
 
     def UpdateModulation(self, Modulation, activation, eta_homeo):
@@ -101,11 +113,8 @@ class CHAMP_Layer():
             mask = Variable(torch.ones(dictionary.size()[2],dictionary.size()[3]))
 
         padding = dico_shape[0]-1
-        dico_masked = torch.mul(dictionary,mask)
         X_conv = conv2d(dictionary,dictionary,bias=None,padding=padding).data
-        #X_conv = conv2d(dico_masked,,bias=None,padding=padding).data
-        #Conv0 = conv2d(image_input,dictionary,bias=None)
-        Conv0 = conv2d(image_input,dico_masked,bias=None)
+        Conv0 = conv2d(image_input,dictionary,bias=None)
         Conv_padded = pad(Conv0[:,:,:,:],pad=(padding,padding,padding,padding),mode='constant')
         Conv_size = tuple(Conv0.size())
         Conv = Conv0.data.view(-1,Conv_size[1]*Conv_size[2]*Conv_size[3])
@@ -113,6 +122,7 @@ class CHAMP_Layer():
         Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
 
         residual_image = image_input.data.clone()
+        reconstructed_image = torch.zeros(image_input.size())
         residual_patch = torch.zeros(nb_dico,1,dictionary.size()[2],dictionary.size()[3])
         nb_activation = torch.zeros(nb_dico)
         if modulation is None:
@@ -143,24 +153,26 @@ class CHAMP_Layer():
                 Conv_int = Conv_padded[i_m,:,padding:-padding,padding:-padding].contiguous()
                 Conv_one_image = Conv_int.data.view(-1)
                 if train == True:
-                    residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].add_(-c_ind*dictionary[indice[1],0,:,:].data)
-                    #if self.MaskMod == 'Residual':
-                    #    patch = residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].clone()
-                    #    residual_patch[indice[1],0,:,:] += (patch + c_ind*dictionary[indice[1],0,:,:].data)*mask.data[0,0,:,:] - c_ind*dictionary[indice[1],0,:,:].data
-                    #else :
-                    residual_patch[indice[1],0,:,:].add_(residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1])
+                    reconstructed_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].add_(c_ind*dictionary[indice[1],0,:,:].data)
+                    if self.MaskMod == 'Residual':
+                        patch_before = residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1]
+                        residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].add_(-c_ind*dictionary[indice[1],0,:,:].data)
+                        residual_patch[indice[1],0,:,:] += (patch_before*mask.data[0,0,:,:] - c_ind*dictionary[indice[1],0,:,:].data)
+                        #patch = residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].clone()
+                        #residual_patch[indice[1],0,:,:] += (patch + c_ind*dictionary[indice[1],0,:,:].data)*mask.data[0,0,:,:] - c_ind*dictionary[indice[1],0,:,:].data
+                    else :
+                        residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].add_(-c_ind*dictionary[indice[1],0,:,:].data)
+                        residual_patch[indice[1],0,:,:].add_(residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1])
                     nb_activation[indice[1]] +=1
                 idx += 1
         if train == True:
             res = torch.mean(torch.norm(residual_image.view(nb_image,image_size*image_size),p=2,dim=1))
             mean = residual_patch / nb_activation.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(residual_patch)
             residual_patch[mean==mean] = mean[mean==mean]
-            if train == True:
-                residual_patch.mul_(mask.data[0,0,:,:])
         else :
             res=0
         code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([nb_image,nb_dico,Conv_size[2],Conv_size[3]]))
-        return code, res, nb_activation, residual_patch
+        return code, res, nb_activation, residual_patch, reconstructed_image,residual_image
 
 '''
 def RunLayer0(self, dataset, dictionary):
