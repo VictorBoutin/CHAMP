@@ -1,5 +1,5 @@
-from CHAMP.DataTools import Normalize
-from CHAMP.DataLoader import GenerateRound
+from CHAMP.DataLoader import GenerateMask
+from CHAMP.LowLevel import conv, Normalize, padTensor
 from torch.nn.functional import conv2d, pad
 import torch
 import numpy as np
@@ -176,3 +176,55 @@ class CHAMP_Layer:
         code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
                                         nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
         return code, res, nb_activation, residual_patch
+
+def ConvMP(image_input, dictionary, l0_sparseness=2,
+                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
+                MaskMod='Residual'):
+    nb_image = image_input.size()[0]
+    image_size = image_input.size()[2]
+    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
+    nb_dico = dictionary.size()[0]
+    padding = dico_shape[2] - 1
+    X_conv = conv(dictionary, dictionary, padding=padding)
+    I_conv = conv(image_input, dictionary)
+    I_conv_padded = padTensor(I_conv, padding=padding)
+    Conv_size = tuple(I_conv.size())
+    Conv = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+    Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
+    Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
+    residual_image = image_input.clone()
+    residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
+    nb_activation = torch.zeros(nb_dico)
+    if modulation is None:
+        modulation = torch.ones(nb_dico)
+    Mod = modulation.unsqueeze(1).unsqueeze(2).expand_as(I_conv[0, :, :, :]).contiguous()
+    Mod = Mod.view(Conv[0].size())
+    idx = 0
+
+    for i_m in range(nb_image):
+        Conv_one_image = Conv[i_m, :]
+        coeff_memory = torch.zeros(Conv_one_image.size())
+
+        for i_l0 in range(l0_sparseness):
+
+            ConvMod = Conv_one_image * Mod
+            if doSym == 'abs':
+                _, m_ind = torch.max(torch.abs(ConvMod), 0)
+            elif doSym == 'pos':
+                _, m_ind = torch.max(ConvMod * (ConvMod>0).type(torch.FloatTensor), 0)
+            else :
+                _, m_ind = torch.max(ConvMod, 0)
+            indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
+            m_value = Conv_one_image[m_ind]
+            c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[1] - 1, dico_shape[2] - 1]
+            coeff_memory[m_ind] += c_ind
+            Sparse_code_addr[:, idx] = torch.LongTensor(
+                [int(i_m), int(indice[1]), int(indice[2]), int(indice[3])])
+            Sparse_code_coeff[idx] = float(coeff_memory[m_ind].numpy())
+            I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]\
+                .add_(-c_ind * X_conv[indice[1], :, :])
+            Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].contiguous().view(-1)
+            idx += 1
+    code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
+                                    nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
+    return code

@@ -4,24 +4,13 @@ from PIL import Image
 from random import shuffle
 from os import listdir
 import numpy as np
-import cv2
 import torchvision
 import torchvision.transforms as transforms
 from torch.nn.functional import conv2d
-from CHAMP.DataTools import Normalize, Decorrelate, ConstrastNormalized, zero_one_norm, MakePositive
+from CHAMP.DataTools import Normalize, Decorrelate, ContrastNormalized, zero_one_norm, MakePositive
 from CHAMP.DataTools import Decorrelate2
 
 
-def GenerateGabor(nb_dico, dico_size):
-    dico_size = tuple(dico_size)
-    params = {'ksize':dico_size, 'sigma':1,'lambd':5,
-                  'gamma':0.5, 'psi':0, 'ktype':cv2.CV_32F}
-
-    dico_gabor = Variable(torch.Tensor(nb_dico,1,dico_size[0],dico_size[1]))
-    for i in range(nb_dico):
-        dico_gabor[i,0,:,:]=torch.FloatTensor(cv2.getGaborKernel(theta=i*np.pi/nb_dico,**params))
-    dico_gabor = Normalize(dico_gabor)
-    return dico_gabor
 
 
 
@@ -84,7 +73,7 @@ def Decor(dataset):
     return data_transformed
 
 
-def GenerateRound(dico, sigma=0.8, style='Gaussian'):
+def GenerateMask(dico, sigma=0.8, style='Gaussian'):
     dico_size = tuple(dico.size())
     R = dico_size[2]//2
     grid = torch.arange(-1*R,R+1)
@@ -118,12 +107,12 @@ def GenerateRound(dico, sigma=0.8, style='Gaussian'):
         mask = torch.exp(-0.5*radius**2/(R+3)**2/sigma**2)
         binary_mask = (radius < R+1).type(torch.FloatTensor)
         mask = mask*binary_mask
-    mask = Variable(mask.unsqueeze(0).unsqueeze(1).expand_as(dico))
+    mask = mask.unsqueeze(0).unsqueeze(1).expand_as(dico)
 
     return mask
 
 
-def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True, Decorrelated=True, Normalized='ZeroToOne') :
+def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True, Decorrelated=True, Normalized=False) :
     file_list = list()
     batch_size = 400//nb_batch
     if size is None :
@@ -149,11 +138,11 @@ def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True, Decorrelated=Tr
             tensor_image[i,j,0,:,:] = torch.FloatTensor(np.array(image).astype(float))
             tensor_label[i,j] = file_list[idx][1]
             idx+=1
-    to_output = (Variable(tensor_image.float()),tensor_label)
-    if Normalized == 'ZeroToOne' :
-        to_output = zero_one_norm(to_output)
+    to_output = (tensor_image.float(),tensor_label)
     if  Decorrelated == True :
-        to_output = ConstrastNormalized(to_output)
-    if Normalized == 'Positive' :
-        to_output = MakePositive(to_output)
+        to_output = ContrastNormalized(to_output)
+    #if Normalized == 'ZeroToOne' :
+    #    to_output = zero_one_norm(to_output)
+    #if Normalized == 'Positive' :
+    #    to_output = MakePositive(to_output)
     return to_output

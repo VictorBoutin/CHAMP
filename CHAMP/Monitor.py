@@ -6,21 +6,16 @@ def DisplayDico(dico):
     subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
     dico_size = tuple(dico.size()[2:])
     nb_dico = dico.size()[0]
-    out_dico = dico.data.numpy().reshape(-1,dico_size[0],dico_size[1])
+    out_dico = dico.numpy().reshape(-1,dico_size[0],dico_size[1])
     fig = plt.figure(figsize=(10,(nb_dico//10+1)), subplotpars=subplotpars)
     for i, each_filter in enumerate(out_dico):
         #print(each_filter.shape)
-        each_filter /= np.abs(each_filter).max()
+        #each_filter /= np.abs(each_filter).max()
         #cmax = np   .max(each_filter)
         #cmin = np.min(each_filter)
         ax = fig.add_subplot(nb_dico//10+1,10,i+1)
-<<<<<<< HEAD
-        ax.imshow(each_filter, cmap='gray', vmin=-1, vmax=1)
-        #ax.imshow(each_filter, cmap='gray')
-=======
         cmax = np.abs(each_filter.max())
         ax.imshow(each_filter, cmap='gray', vmin=-cmax, vmax=cmax)
->>>>>>> aa5309f3ea4f88edb3425cdfcc7aca5ef794845c
         ax.set_xticks(())
         ax.set_yticks(())
 

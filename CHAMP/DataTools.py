@@ -2,43 +2,52 @@ import torch
 from torch.autograd import Variable
 from torch.nn.functional import conv2d
 import pickle
+import cv2
+import math
+from CHAMP.LowLevel import conv, Normalize
 
 
-def convolve2D(data, filters, padding):
-    '''
-    Convolution fonction on tenseur:
-    INPUT :
-        * data <torch.tensor(nb_image, nb_polarities, w, h)> : input image in a tensor format
-        * filters <torch.tensor(nb_dico, nb_polarities, w_d, h_d)> :  filters in a tensor format
-        * padding <int> or <(int,int,int,int)> : padding of the 2 last dimensions. If this is an <int>
-            all the vertical/horizontal & right/left paddings are the same.
-    '''
-    filters, data = Variable(filters), Variable(data)
-    output = conv2d(data,filters,padding=padding)
-    return output.data
+def ContrastNormalized(data,avg_size=(5,5)):
+    img_size = data[0].size()
+    output_tensor = torch.FloatTensor(img_size)
+    padding = avg_size[0]-1
+    output_tensor2 = torch.FloatTensor(img_size[0],img_size[1],img_size[2],img_size[3]-padding,img_size[4]-padding)
+    to_conv = (torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1])
+    for idx_batch, each_batch in enumerate(data[0]):
+        convol = conv(each_batch,to_conv,padding=padding//2)
+        output_tensor[idx_batch,:,:,:,:] = each_batch - convol
+        output_tensor2 = output_tensor[:,:,:,padding//2:-padding//2,padding//2:-padding//2]
+    return output_tensor2, data[1]
 
+def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0):
+    dico_size = tuple(dico_size)
+    params = {'ksize':dico_size, 'sigma':sigma,'lambd':lambd,
+                  'gamma':0.5, 'psi':psi, 'ktype':cv2.CV_32F}
 
-def Normalize(to_normalize):
-    size = tuple(to_normalize.size())
-    reshaped = to_normalize.contiguous().view(size[0]*size[1], size[2]*size[3])
-    #reshaped = to_normalize.view(size[0], size[2]*size[3]) ## Chaged for L2
+    dico_gabor = torch.Tensor(nb_dico,1,dico_size[0],dico_size[1])
+    for i in range(nb_dico):
+        dico_gabor[i,0,:,:]=torch.FloatTensor(cv2.getGaborKernel(theta=i*math.pi/nb_dico,**params))
+    dico_gabor = Normalize(dico_gabor)
+    return dico_gabor
 
-    try :
-        norm = torch.norm(reshaped, p=2, dim=1).detach()
-    except:
-        norm = torch.norm(reshaped, p=2, dim=1)
-    norm_int = norm.unsqueeze(1).expand_as(reshaped)
-    dico = reshaped.div(norm_int).view(size)
-    return dico
+def Rebuilt(image,code,dico):
+    all_indice = torch.transpose(code._indices(),0,1)
+    output = torch.zeros(image.size())
+    padding = dico.size()[2]-1
+    for idx, (i,c) in enumerate(zip(all_indice,code._values())):
+        output[i[0],:,i[2]:i[2]+padding+1,i[3]:i[3]+padding+1].add_(c*dico[i[1],:,:,:])
+    return output
+
+###
 
 def Decorrelate(dataset):
-    filt_decor = Variable(torch.Tensor(1,1,3,3))
+    filt_decor = torch.Tensor(1,1,3,3)
     filt_decor[0,0,:,:] = torch.FloatTensor([[0,-1,0],[-1,4,-1],[0,-1,0]])
     to_out = list()
     for i, each_set in enumerate(dataset):
         images, labels = each_set
-        images = Variable(images)
-        to_out.append((conv2d(images, filt_decor,padding=1),labels))
+        images = images
+        to_out.append((conv(images, filt_decor,padding=1),labels))
     return to_out
 
 def Decorrelate2(dataset):
@@ -64,17 +73,7 @@ def LoadNetwork(loading_path):
         Net = pickle.load(file)
     return Net
 
-def ConstrastNormalized(data,avg_size=(5,5)):
-    output_tensor = torch.FloatTensor(data[0].size())
-    output_tensor2 = torch.FloatTensor(data[0].size()[0],data[0].size()[1],data[0].size()[2],data[0].size()[3]-4,data[0].size()[4]-4)
-    to_conv = torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])
-    to_conv2 = Variable(to_conv.view(1,1,avg_size[0],avg_size[1]))
-    for idx_batch, each_batch in enumerate(data[0]):
-        conv = conv2d(each_batch,to_conv2,padding=2)
-        output_tensor[idx_batch,:,:,:,:] = each_batch.data - conv.data
-        output_tensor2 = output_tensor[:,:,:,2:-2,2:-2]
 
-    return (Variable(output_tensor2), data[1])
 
 def zero_one_norm(data_input):
     image = data_input[0].data
