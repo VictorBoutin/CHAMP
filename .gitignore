@@ -1,1 +1,10 @@
+<<<<<<< HEAD
 CHAMP/__pycache__/
+=======
+Probe/.ipynb_checkpoints/UseExample-checkpoint.ipynb
+CHAMP.egg-info
+
+*.pyc
+.ipynb_checkpoints
+.idea
+>>>>>>> aa5309f3ea4f88edb3425cdfcc7aca5ef794845c

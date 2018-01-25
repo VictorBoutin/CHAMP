@@ -14,8 +14,13 @@ def DisplayDico(dico):
         #cmax = np   .max(each_filter)
         #cmin = np.min(each_filter)
         ax = fig.add_subplot(nb_dico//10+1,10,i+1)
+<<<<<<< HEAD
         ax.imshow(each_filter, cmap='gray', vmin=-1, vmax=1)
         #ax.imshow(each_filter, cmap='gray')
+=======
+        cmax = np.abs(each_filter.max())
+        ax.imshow(each_filter, cmap='gray', vmin=-cmax, vmax=cmax)
+>>>>>>> aa5309f3ea4f88edb3425cdfcc7aca5ef794845c
         ax.set_xticks(())
         ax.set_yticks(())
 
