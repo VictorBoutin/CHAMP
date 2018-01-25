@@ -1,4 +1,4 @@
-from CHAMP.DataLoader import GenerateMask
+from CHAMP.DataTools import GenerateMask
 from CHAMP.LowLevel import conv, Normalize, padTensor
 from torch.nn.functional import conv2d, pad
 import torch

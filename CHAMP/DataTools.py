@@ -38,6 +38,44 @@ def Rebuilt(image,code,dico):
         output[i[0],:,i[2]:i[2]+padding+1,i[3]:i[3]+padding+1].add_(c*dico[i[1],:,:,:])
     return output
 
+def GenerateMask(dico, sigma=0.8, style='Gaussian'):
+    dico_size = tuple(dico.size())
+    R = dico_size[2]//2
+    grid = torch.arange(-1*R,R+1)
+    X_grid = grid.unsqueeze(1).expand((dico_size[2],dico_size[3]))
+    Y_grid  = torch.t(X_grid)
+    radius = torch.sqrt(X_grid**2 + Y_grid**2)
+    if style == 'Gaussian':
+        mask = torch.exp(-0.5*radius**2/R**2/sigma**2)
+    elif style == 'Binary':
+        mask = radius < sigma
+        mask = mask.type(torch.FloatTensor)
+    elif style == 'GaussianBinary':
+        mask = torch.exp(-0.5*radius**2/R**2/sigma**2)
+        binary_mask = (radius < R+1).type(torch.FloatTensor)
+        mask = mask*binary_mask
+    elif style == 'Polynomial':
+        mask = ((radius-R)/R)*((radius-R)/R)
+    elif style == 'Square':
+        mask = radius<2
+        mask = mask.type(torch.FloatTensor)
+        mask[radius>=2]=0.9
+    elif style == 'GaussianBinaryMagic':
+        mask = torch.exp(-0.5*radius**2/(R+3)**2/sigma**2)
+        binary_mask = (radius < R+1).type(torch.FloatTensor)
+        mask = mask*binary_mask
+    elif style == 'GaussianBinarySuperMagic':
+        grid = 0.5*torch.arange(-1*R,R+1)
+        X_grid = grid.unsqueeze(1).expand((dico_size[2],dico_size[3]))
+        Y_grid  = torch.t(X_grid)
+        radius = torch.sqrt(X_grid**2 + Y_grid**2)
+        mask = torch.exp(-0.5*radius**2/(R+3)**2/sigma**2)
+        binary_mask = (radius < R+1).type(torch.FloatTensor)
+        mask = mask*binary_mask
+    mask = mask.unsqueeze(0).unsqueeze(1).expand_as(dico)
+
+    return mask
+
 ###
 
 def Decorrelate(dataset):
