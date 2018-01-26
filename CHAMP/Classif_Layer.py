@@ -6,24 +6,18 @@ import torch.nn.functional as F
 
 class Classif_Layer(nn.Module):
 
-    def __init__(self, nb_dico, size_image,verbose):
+    def __init__(self, nb_dico, size_image, nb_categories, verbose=0):
         super(Classif_Layer, self).__init__()
         self.nb_dico = nb_dico
         self.size_image = size_image
         self.type = 'Classification'
         self.verbose = verbose
-        # an affine operation: y = Wx + b
-        #self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], M)
-        #self.fc2 = nn.Linear(M, 10)
-        self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], 10)
+        self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], nb_categories)
 
 
     def forward(self, x):
-        # Max pooling over a (2, 2) window
-        #x = x.view(-1, self.num_flat_features(x))
         x = x.view(-1,self.nb_dico*self.size_image[0]*self.size_image[1])
         x = F.softmax(self.fc1(x))
-        #x = self.fc2(x)
         return x
 
     def num_flat_features(self, x):
@@ -39,12 +33,12 @@ class Classif_Layer(nn.Module):
         self.res = list()
         self.accuracy_list = list()
         optimizer = optim.SGD(self.parameters(), lr=lr, momentum=0.9)
-        #nb_batch = input_coding.size()[0]//batch_size
         for epoch in range(nb_epoch):  # loop over the dataset multiple times
 
             running_loss = 0.0
-            for i, each_batch in enumerate(data_train_loader):
-                data, target = each_batch
+            #data,target =
+            for i, each_batch in enumerate(data_train_loader[0]):
+                data, target = each_batch, data_train_loader[1][i,:]
                 #data, target = each_batch
                 #target = data_train_loader[1][i,:]
                 batch_size = data.size()[0]
@@ -55,10 +49,10 @@ class Classif_Layer(nn.Module):
                 if type(data) is torch.sparse.FloatTensor:
                     inputs, labels = Variable(data.to_dense()), Variable(target)
                 else :
-                    inputs, labels = Variable(data.data), Variable(target)
+                    inputs, labels = Variable(data.contiguous()), Variable(target)
+
                 # zero the parameter gradients
                 optimizer.zero_grad()
-
                 # forward + backward + optimize
                 outputs = self(inputs)
                 loss = criterion(outputs, labels)
@@ -75,11 +69,11 @@ class Classif_Layer(nn.Module):
                 if type(data) is torch.sparse.FloatTensor:
                     output_testing = self.forward(Variable(data_test_loader[0][0].to_dense()))
                 else :
-                    output_testing = self.forward(Variable(data_test_loader[0][0].data))
+                    output_testing = self.forward(Variable(data_test_loader[0][0].contiguous()))
                 _, predicted = torch.max(output_testing.data, 1)
                 #total += output_testing[0][1].size(0)
-                correct = (predicted == data_test_loader[0][1]).sum()
-                accuracy = correct/data_test_loader[0][1].size(0)
+                correct = (predicted == data_test_loader[1][0,:]).sum()
+                accuracy = correct/data_test_loader[1].size()[1]
                 if self.verbose != 0:
                     print('accuracy : {0:.2f} %'.format(accuracy*100))
                 self.accuracy_list.append(accuracy)
