@@ -76,69 +76,22 @@ def GenerateMask(dico, sigma=0.8, style='Gaussian'):
 
     return mask
 
+def ChangeBatchSize(data, batch_size):
+    nb_image = data[0].size()[1]
+    image_size=data[0].size()[2:]
+    image = data[0].contiguous().view(nb_image//batch_size,batch_size,image_size[0],image_size[1],image_size[2])
+    label = data[1].contiguous().view(nb_image//batch_size,-1)
+    return (image,label)
 ###
 
-def Decorrelate(dataset):
-    filt_decor = torch.Tensor(1,1,3,3)
-    filt_decor[0,0,:,:] = torch.FloatTensor([[0,-1,0],[-1,4,-1],[0,-1,0]])
-    to_out = list()
-    for i, each_set in enumerate(dataset):
-        images, labels = each_set
-        images = images
-        to_out.append((conv(images, filt_decor,padding=1),labels))
-    return to_out
-
-def Decorrelate2(dataset):
-    filt_decor = Variable(torch.Tensor(1,1,3,3))
-    filt_decor[0,0,:,:] = torch.FloatTensor([[0,-1,0],[-1,4,-1],[0,-1,0]])
-    to_out = torch.FloatTensor(120,500,1,28,28)
-    for i, each_set in enumerate(dataset):
-        images, labels = each_set
-        images = Variable(images)
-        a = conv2d(images, filt_decor,padding=1)
-        #print(a.size())
-        to_out[i,:,:,:,:]=conv2d(images, filt_decor,padding=1).data
-    return to_out
 
 
 def SaveNetwork(Network, saving_path):
     with open(saving_path, 'wb') as file:
-        pickle.dump(Network.Layers, file, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(Network, file, pickle.HIGHEST_PROTOCOL)
     print('file saved')
 
 def LoadNetwork(loading_path):
     with open(loading_path, 'rb') as file:
         Net = pickle.load(file)
     return Net
-
-
-
-def zero_one_norm(data_input):
-    image = data_input[0].data
-    output = torch.FloatTensor(image.size())
-    for idx_batch, each_batch in enumerate(image):
-        each_batch = each_batch.contiguous().view(-1,each_batch.size()[2]*each_batch.size()[3])
-        mini,_ = torch.min(each_batch,dim=1)
-        mini = mini.unsqueeze(1).expand_as(each_batch)
-        each_batch -= mini
-        maxi,_= torch.max(each_batch,dim=1)
-        maxi = maxi.unsqueeze(1).expand_as(each_batch)
-        each_batch /= maxi
-        each_batch = each_batch.view(image[0,:,:,:,:].size())
-        output[idx_batch,:,:,:,:] = each_batch
-    return (Variable(output),data_input[1])
-
-def MakePositive(data_input):
-    image = data_input[0].data
-    output = torch.FloatTensor(image.size())
-    for idx_batch, each_batch in enumerate(image):
-        each_batch = each_batch.contiguous().view(-1,each_batch.size()[2]*each_batch.size()[3])
-        mini,_ = torch.min(each_batch,dim=1)
-        mini = mini.unsqueeze(1).expand_as(each_batch)
-        each_batch -= mini
-        #maxi,_= torch.max(each_batch,dim=1)
-        #maxi = maxi.unsqueeze(1).expand_as(each_batch)
-        #each_batch /= maxi
-        each_batch = each_batch.view(image[0,:,:,:,:].size())
-        output[idx_batch,:,:,:,:] = each_batch
-    return (Variable(output),data_input[1])

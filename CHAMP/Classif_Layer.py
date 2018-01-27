@@ -17,7 +17,7 @@ class Classif_Layer(nn.Module):
 
     def forward(self, x):
         x = x.view(-1,self.nb_dico*self.size_image[0]*self.size_image[1])
-        x = F.softmax(self.fc1(x))
+        x = F.softmax(self.fc1(x),dim=1)
         return x
 
     def num_flat_features(self, x):

@@ -1,79 +1,58 @@
 import torch
-from torch.autograd import Variable
 from PIL import Image
 from random import shuffle
 from os import listdir
 import numpy as np
 import torchvision
 import torchvision.transforms as transforms
-from torch.nn.functional import conv2d
-from CHAMP.DataTools import Normalize, Decorrelate, ContrastNormalized, zero_one_norm, MakePositive
-from CHAMP.DataTools import Decorrelate2
+from CHAMP.DataTools import Normalize, ContrastNormalized
 
 
-
-
-
-def LoadMNIST(batch_size, data_path='../../DataBase/MNISTtorch', decorrelate=True):
-    transform = transforms.Compose([
+def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True):
+    if Grayscale == True :
+        transform = transforms.Compose([
+                 transforms.Grayscale(),
                  transforms.ToTensor()])
-
-    train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=False)
-    train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size,shuffle=True,num_workers=2)
-    test_set = torchvision.datasets.MNIST(root=data_path, train=False,transform=transform,download=False)
-    #test_data_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size,shuffle=False,num_workers=2)
-    test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
-    if decorrelate == True:
-        train_data_loader = Decorrelate(train_data_loader)
-        test_data_loader = Decorrelate(test_data_loader)
-
-    #return (img_train,label_train), (img_test,label_test)
-    return (train_data_loader), (test_data_loader)
-
-def LoadMNIST2(batch_size, data_path='../../DataBase/MNISTtorch', decorrelate=True):
-    transform = transforms.Compose([
+    else :
+        transform = transforms.Compose([
                  transforms.ToTensor()])
-                 #lambda x : Decorrelate2(x)
-
-
-    train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=False)
-    train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size,shuffle=True,num_workers=2)
-    test_set = torchvision.datasets.MNIST(root=data_path, train=False,transform=transform,download=False)
-    #test_data_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size,shuffle=False,num_workers=2)
-    test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
-
-    data_train = (Variable(torch.FloatTensor(60000//batch_size,batch_size,1,28,28)),torch.LongTensor(60000//batch_size,batch_size))
-    data_test = (Variable(torch.FloatTensor(1,10000,1,28,28)),torch.LongTensor(1,10000))
-    #print(data_train[0].size())
-
-    for idx, each_batch in enumerate(train_data_loader) :
-        data_train[0][idx,:,:,:,:]=Variable(each_batch[0])
-        data_train[1][idx,:]=each_batch[1]
-
-    for idx,each_batch in enumerate(test_data_loader):
-        data_test[0][idx,:,:,:,:]=Variable(each_batch[0])
-        data_test[1][idx,:]=each_batch[1]
-
+    if name=='MNIST':
+        train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=False)
+        train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=60000,shuffle=True,num_workers=2)
+        test_set = torchvision.datasets.MNIST(root=data_path, train=False,transform=transform,download=False)
+        test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
+        data_training = list(train_data_loader)
+        data_training = (data_training[0][0].unsqueeze(0).contiguous(),data_training[0][1].unsqueeze(0).contiguous())
+        data_testing = list(test_data_loader)
+        data_testing = (data_testing[0][0].unsqueeze(0).contiguous(),data_testing[0][1].unsqueeze(0).contiguous())
+    if name == 'CIFAR':
+        train_set = torchvision.datasets.CIFAR10(root=data_path,train=True,transform=transform,download=False)
+        train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=50000,shuffle=True,num_workers=2)
+        test_set = torchvision.datasets.CIFAR10(root=data_path,train=False, transform=transform,download=False)
+        test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
+        data_training = list(train_data_loader)
+        data_training = (data_training[0][0].unsqueeze(0).contiguous(),data_training[0][1].unsqueeze(0).contiguous())
+        data_testing = list(test_data_loader)
+        data_testing = (data_testing[0][0].unsqueeze(0).contiguous(),data_testing[0][1].unsqueeze(0).contiguous())
+    if name == 'STL10':
+        train_set = torchvision.datasets.STL10(root=data_path,split='train',transform=transform,download=False)
+        train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=50000,shuffle=True,num_workers=2)
+        test_set = torchvision.datasets.STL10(root=data_path,split='test', transform=transform,download=False)
+        test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
+        data_training = list(train_data_loader)
+        data_training = (data_training[0][0].unsqueeze(0).contiguous(),data_training[0][1].unsqueeze(0).contiguous())
+        data_testing = list(test_data_loader)
+        data_testing = (data_testing[0][0].unsqueeze(0).contiguous(),data_testing[0][1].unsqueeze(0).contiguous())
+    if name == 'Face':
+        data_training = LoadFaceDB(data_path,size = (92,92), nb_batch=1, to_shuffle=True)
+        data_testing = (data_training[0].clone(),data_training[1].clone())
     if decorrelate == True:
-        data_train = Decor(data_train)
-        data_test = Decor(data_test)
-
-    return data_train, data_test
-
-def Decor(dataset):
-    filt_decor = Variable(torch.Tensor(1,1,3,3))
-    filt_decor[0,0,:,:] = torch.FloatTensor([[0,-1,0],[-1,4,-1],[0,-1,0]])
-    data_transformed = (Variable(torch.FloatTensor(dataset[0].size())),torch.LongTensor(dataset[1].size()))
-    for i, each_set in enumerate(dataset[0]):
-        images = each_set
-        label = dataset[1][i,:]
-
-        data_transformed[0][i,:,:,:,:] = conv2d(images, filt_decor,padding=1)
-        data_transformed[1][i,:] = label
-    return data_transformed
+        data_training = ContrastNormalized(data_training,avg_size=avg_size)
+        data_testing = ContrastNormalized(data_testing,avg_size=avg_size)
+    return (data_training,data_testing)
 
 
-def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True, Decorrelated=True, Normalized=False) :
+def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True) :
     file_list = list()
     batch_size = 400//nb_batch
     if size is None :
@@ -87,10 +66,8 @@ def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True, Decorrelated=Tr
                 tot_dir = str(path)+str(each_dir)+'/'+str(each_file)
                 file_list.append((tot_dir,label))
             label+=1
-
     if to_shuffle == True :
         shuffle(file_list)
-
     idx = 0
     for i in range(nb_batch):
         for j in range(batch_size):
@@ -100,10 +77,4 @@ def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True, Decorrelated=Tr
             tensor_label[i,j] = file_list[idx][1]
             idx+=1
     to_output = (tensor_image.float(),tensor_label)
-    if  Decorrelated == True :
-        to_output = ContrastNormalized(to_output)
-    #if Normalized == 'ZeroToOne' :
-    #    to_output = zero_one_norm(to_output)
-    #if Normalized == 'Positive' :
-    #    to_output = MakePositive(to_output)
     return to_output

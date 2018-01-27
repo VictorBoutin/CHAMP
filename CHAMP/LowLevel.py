@@ -10,6 +10,9 @@ def conv(data, filters, padding=0):
         * filters <torch.tensor(nb_dico, nb_polarities, w_d, h_d)> :  filters in a tensor format
         * padding <int> or <(int,int,int,int)> : padding of the 2 last dimensions. If this is an <int>
             all the vertical/horizontal & right/left paddings are the same.
+    OUTPUT :
+        * output <torch.tensor(nb_image, nb_polarities, w+padding-wd+1, h+padding-h_d+1) : convulution between
+        data and filters
     '''
     filters, data = Variable(filters), Variable(data)
     output = conv2d(data,filters,padding=padding,bias=None)
