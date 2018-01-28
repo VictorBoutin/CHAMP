@@ -4,20 +4,20 @@ from torch.nn.functional import conv2d
 import pickle
 import cv2
 import math
-from CHAMP.LowLevel import conv, Normalize
+from CHAMP.LowLevel import conv, Normalize, padTensor
+
 
 
 def ContrastNormalized(data,avg_size=(5,5)):
+    assert avg_size[0]%2 == 1, 'deccorlation filters size should be odd'
     img_size = data[0].size()
     output_tensor = torch.FloatTensor(img_size)
-    padding = avg_size[0]-1
-    output_tensor2 = torch.FloatTensor(img_size[0],img_size[1],img_size[2],img_size[3]-padding,img_size[4]-padding)
     to_conv = (torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1])
     for idx_batch, each_batch in enumerate(data[0]):
-        convol = conv(each_batch,to_conv,padding=padding//2)
+        padded_tensor = padTensor(each_batch,avg_size[0]//2,mode='reflect')
+        convol = conv(padded_tensor,to_conv)
         output_tensor[idx_batch,:,:,:,:] = each_batch - convol
-        output_tensor2 = output_tensor[:,:,:,padding//2:-padding//2,padding//2:-padding//2]
-    return output_tensor2, data[1]
+    return output_tensor, data[1]
 
 def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0):
     dico_size = tuple(dico_size)
