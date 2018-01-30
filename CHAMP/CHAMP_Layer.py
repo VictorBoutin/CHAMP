@@ -179,7 +179,7 @@ class CHAMP_Layer:
 
 def ConvMP(image_input, dictionary, l0_sparseness=2,
                 modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual'):
+                MaskMod='Residual',GPU=False):
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
@@ -190,11 +190,21 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
     I_conv_padded = padTensor(I_conv, padding=padding)
     Conv_size = tuple(I_conv.size())
     Conv = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-    Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
-    Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
+    if GPU == True :
+        Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long().cuda()
+        Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness).cuda()
+        residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2]).cuda()
+        nb_activation = torch.zeros(nb_dico).cuda()
+    else :
+        Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
+        Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
+        residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
+        nb_activation = torch.zeros(nb_dico)
+    #Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
+    #Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
     residual_image = image_input.clone()
-    residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
-    nb_activation = torch.zeros(nb_dico)
+    #residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
+    #nb_activation = torch.zeros(nb_dico)
     if modulation is None:
         modulation = torch.ones(nb_dico)
     Mod = modulation.unsqueeze(1).unsqueeze(2).expand_as(I_conv[0, :, :, :]).contiguous()
