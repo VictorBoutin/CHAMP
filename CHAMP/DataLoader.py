@@ -8,14 +8,14 @@ import torchvision.transforms as transforms
 from CHAMP.DataTools import Normalize, ContrastNormalized
 
 
-def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True):
+def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resize=None,GPU=False):
+    Composition = list()
     if Grayscale == True :
-        transform = transforms.Compose([
-                 transforms.Grayscale(),
-                 transforms.ToTensor()])
-    else :
-        transform = transforms.Compose([
-                 transforms.ToTensor()])
+        Composition.append(transforms.Grayscale())
+    if resize is not None :
+        Composition.append(transforms.Resize(resize))
+    Composition.append(transforms.ToTensor())
+    transform = transforms.Compose(Composition)
     if name=='MNIST':
         train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=False)
         train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=60000,shuffle=True,num_workers=2)
@@ -46,6 +46,9 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True):
     if name == 'Face':
         data_training = LoadFaceDB(data_path,size = (92,92), nb_batch=1, to_shuffle=True)
         data_testing = (data_training[0].clone(),data_training[1].clone())
+    if GPU == True
+        data_training = [data_training[0].cuda(),data_training[1].cuda()]
+
     if decorrelate == True:
         data_training = ContrastNormalized(data_training,avg_size=avg_size)
         data_testing = ContrastNormalized(data_testing,avg_size=avg_size)
