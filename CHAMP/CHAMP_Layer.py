@@ -228,7 +228,7 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
             else :
                 _, m_ind = torch.max(ConvMod, 0)
             #indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
-            indice = unravel_index(m_ind,Conv_size,GPU=GPU)
+            indice = unravel_index(m_ind,Conv_size,GPU=False)
             m_value = Conv_one_image[m_ind]
             c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[1] - 1, dico_shape[2] - 1]
             #coeff_memory[m_ind] += c_ind
