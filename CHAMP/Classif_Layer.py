@@ -6,13 +6,14 @@ import torch.nn.functional as F
 
 class Classif_Layer(nn.Module):
 
-    def __init__(self, nb_dico, size_image, nb_categories, verbose=0):
+    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False):
         super(Classif_Layer, self).__init__()
         self.nb_dico = nb_dico
         self.size_image = size_image
         self.type = 'Classification'
         self.verbose = verbose
         self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], nb_categories)
+        self.GPU=GPU
 
 
     def forward(self, x):
@@ -38,7 +39,10 @@ class Classif_Layer(nn.Module):
             running_loss = 0.0
             #data,target =
             for i, each_batch in enumerate(data_train_loader[0]):
-                data, target = each_batch, data_train_loader[1][i,:]
+                if self.GPU:
+                    data, target = each_batch.cuda(), data_train_loader[1][i,:].cuda()
+                else :
+                    data, target = each_batch, data_train_loader[1][i,:]
                 #data, target = each_batch
                 #target = data_train_loader[1][i,:]
                 batch_size = data.size()[0]
