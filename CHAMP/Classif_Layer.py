@@ -14,6 +14,8 @@ class Classif_Layer(nn.Module):
         self.verbose = verbose
         self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], nb_categories)
         self.GPU=GPU
+        if self.GPU :
+            self.cuda()
 
 
     def forward(self, x):
