@@ -195,18 +195,21 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
         Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness).cuda()
         residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2]).cuda()
         nb_activation = torch.zeros(nb_dico).cuda()
+        if modulation is None:
+            modulation = torch.ones(nb_dico).cuda()
     else :
         Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
         Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
         residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
         nb_activation = torch.zeros(nb_dico)
+        if modulation is None:
+            modulation = torch.ones(nb_dico)
     #Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
     #Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
     residual_image = image_input.clone()
     #residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
     #nb_activation = torch.zeros(nb_dico)
-    if modulation is None:
-        modulation = torch.ones(nb_dico)
+
     Mod = modulation.unsqueeze(1).unsqueeze(2).expand_as(I_conv[0, :, :, :]).contiguous()
     Mod = Mod.view(Conv[0].size())
     idx = 0
