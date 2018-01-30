@@ -50,8 +50,8 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resiz
         data_training = (data_training[0].cuda(),data_training[1].cuda())
         data_testing = (data_testing[0].cuda(),data_testing[1].cuda())
     if decorrelate == True:
-        data_training = ContrastNormalized(data_training,avg_size=avg_size)
-        data_testing = ContrastNormalized(data_testing,avg_size=avg_size)
+        data_training = ContrastNormalized(data_training,avg_size=avg_size,GPU=GPU)
+        data_testing = ContrastNormalized(data_testing,avg_size=avg_size,GPU=GPU)
     return (data_training,data_testing)
 
 

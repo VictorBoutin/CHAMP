@@ -8,11 +8,15 @@ from CHAMP.LowLevel import conv, Normalize, padTensor
 
 
 
-def ContrastNormalized(data,avg_size=(5,5)):
+def ContrastNormalized(data,avg_size=(5,5),GPU=False):
     assert avg_size[0]%2 == 1, 'deccorlation filters size should be odd'
     img_size = data[0].size()
-    output_tensor = torch.FloatTensor(img_size)
-    to_conv = (torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1])
+    if GPU == True :
+        output_tensor = torch.cuda.FloatTensor(img_size)
+        to_conv = torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1].cuda()
+    else :
+        output_tensor = torch.FloatTensor(img_size)
+        to_conv = (torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1])
     for idx_batch, each_batch in enumerate(data[0]):
         padded_tensor = padTensor(each_batch,avg_size[0]//2,mode='reflect')
         convol = conv(padded_tensor,to_conv)
