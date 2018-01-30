@@ -68,7 +68,7 @@ def DisplayConvergenceClassif(ClusterLayer,to_display=['error']):
         #max_x = each_Layer.record[each_type].shape[0]*each_Layer.record_each
         #ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
         if each_type=='error':
-            to_plot = plt.plot(ClusterLayer.res)
+            to_plot = plt.plot(ClusterLayer.loss_list)
             ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
         if each_type=='accu':
             to_plot = plt.plot(ClusterLayer.accuracy_list)

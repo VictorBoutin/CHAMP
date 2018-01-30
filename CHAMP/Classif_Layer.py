@@ -28,6 +28,37 @@ class Classif_Layer(nn.Module):
             num_features *= s
         return num_features
 
+    def train1epoch(self,data_train_loader,lr=0.1):
+        self.train()
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(self.parameters(), lr=lr, momentum=0.9)
+        for i, each_batch in enumerate(data_train_loader[0]):
+            if self.GPU:
+                data, target = each_batch.cuda(), data_train_loader[1][i,:].cuda()
+            else :
+                data, target = each_batch, data_train_loader[1][i,:]
+            data,target = Variable(data), Variable(target)
+            optimizer.zero_grad()
+
+            outputs = self(data)
+            loss = criterion(outputs, target)
+            loss.backward()
+            optimizer.step()
+        return loss.data[0]
+
+    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1):
+        self.loss_list = []
+        self.accuracy_list = []
+        for epoch in range(nb_epoch):
+            loss = self.train1epoch(data_train_loader,lr=lr)
+            if data_test_loader is None:
+                data_test_loader = data_train_loader
+            accuracy = self.test(data_test_loader)
+            self.accuracy_list.append(accuracy)
+            self.loss_list.append(loss)
+            if self.verbose != 0:
+                print('accuracy : {0:.2f} %, loss : {1:4f}'.format(accuracy,loss))
+
     def train_classif(self, data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1):
 
         criterion = nn.CrossEntropyLoss()
@@ -70,24 +101,23 @@ class Classif_Layer(nn.Module):
                 #    self.res.append(running_loss/ (i*batch_size))
             self.res.append(running_loss/batch_size)
             if data_test_loader is not None:
-                if self.GPU :
-                    if type(data) is torch.sparse.FloatTensor:
-                        output_testing = self.forward(Variable(data_test_loader[0][0].to_dense().cuda()))
-                    else :
-                        output_testing = self.forward(Variable(data_test_loader[0][0].contiguous().cuda()))
-                else :
-                    if type(data) is torch.sparse.FloatTensor:
-                        output_testing = self.forward(Variable(data_test_loader[0][0].to_dense()))
-                    else :
-                        output_testing = self.forward(Variable(data_test_loader[0][0].contiguous()))
-                _, predicted = torch.max(output_testing.data, 1)
-                #total += output_testing[0][1].size(0)
-                correct = (predicted == data_test_loader[1][0,:]).sum()
-                accuracy = correct/data_test_loader[1].size()[1]
+                accuracy = self.test(data_test_loader)
                 if self.verbose != 0:
-                    print('accuracy : {0:.2f} %'.format(accuracy*100))
+                    print('accuracy : {0:.2f} %'.format(accuracy))
                 self.accuracy_list.append(accuracy)
             if self.verbose != 0:
                 print('[%d, %5d] loss: %.8f' %(epoch + 1, i + 1, running_loss/batch_size))
-                    #running_loss = 0.0
         return self
+
+    def test(self, data_test_loader):
+        self.eval()
+        if self.GPU == True:
+            data,target = data_test_loader[0][0].cuda(),data_test_loader[1][0].cuda()
+        else :
+            data,target = data_test_loader[0][0],data_test_loader[1][0]
+        data,target = Variable(data),Variable(target)
+        output = self.forward(data)
+        prediction = output.data.max(1,keepdim=True)[1]
+        correct = prediction.eq(target.data.view_as(prediction)).cpu().sum()
+        accuracy = 100 * correct / data.size()[0]
+        return accuracy
