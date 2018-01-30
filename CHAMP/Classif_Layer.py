@@ -70,10 +70,16 @@ class Classif_Layer(nn.Module):
                 #    self.res.append(running_loss/ (i*batch_size))
             self.res.append(running_loss/batch_size)
             if data_test_loader is not None:
-                if type(data) is torch.sparse.FloatTensor:
-                    output_testing = self.forward(Variable(data_test_loader[0][0].to_dense()))
+                if self.GPU :
+                    if type(data) is torch.sparse.FloatTensor:
+                        output_testing = self.forward(Variable(data_test_loader[0][0].to_dense().cuda()))
+                    else :
+                        output_testing = self.forward(Variable(data_test_loader[0][0].contiguous().cuda()))
                 else :
-                    output_testing = self.forward(Variable(data_test_loader[0][0].contiguous()))
+                    if type(data) is torch.sparse.FloatTensor:
+                        output_testing = self.forward(Variable(data_test_loader[0][0].to_dense()))
+                    else :
+                        output_testing = self.forward(Variable(data_test_loader[0][0].contiguous()))
                 _, predicted = torch.max(output_testing.data, 1)
                 #total += output_testing[0][1].size(0)
                 correct = (predicted == data_test_loader[1][0,:]).sum()
