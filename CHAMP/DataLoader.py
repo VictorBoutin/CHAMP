@@ -46,9 +46,9 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resiz
     if name == 'Face':
         data_training = LoadFaceDB(data_path,size = (92,92), nb_batch=1, to_shuffle=True)
         data_testing = (data_training[0].clone(),data_training[1].clone())
-    if GPU == True
-        data_training = [data_training[0].cuda(),data_training[1].cuda()]
-
+    if GPU == True :
+        data_training = (data_training[0].cuda(),data_training[1].cuda())
+        data_testing = (data_testing[0].cuda(),data_testing[1].cuda())
     if decorrelate == True:
         data_training = ContrastNormalized(data_training,avg_size=avg_size)
         data_testing = ContrastNormalized(data_testing,avg_size=avg_size)
