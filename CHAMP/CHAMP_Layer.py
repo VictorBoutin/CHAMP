@@ -244,3 +244,17 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
     #code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
     #                                nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
     return code
+
+def ConvMP_GPU(image_input, dictionary, l0_sparseness=2,
+                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
+                MaskMod='Residual',GPU=False):
+    nb_image = image_input.size()[0]
+    image_size = image_input.size()[2]
+    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
+    nb_dico = dictionary.size()[0]
+    padding = dico_shape[2] - 1
+    X_conv = conv(dictionary, dictionary, padding=padding)
+    I_conv = conv(image_input, dictionary)
+    I_conv_padded = padTensor(I_conv, padding=padding)
+    Conv_size = tuple(I_conv.size())
+    Conv = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
