@@ -49,3 +49,14 @@ def Normalize(to_normalize):
     norm_int = norm.unsqueeze(1).expand_as(reshaped)
     dico = reshaped.div(norm_int).view(size)
     return dico
+
+def unravel_index(indice,size,GPU=False):
+    idx=[]
+    for each_size in size[::-1]:
+        idx = [indice%each_size] + idx
+        indice = indice/each_size
+    if GPU==True:
+        idx = torch.cat(idx).cuda()
+    else :
+        idx = torch.cat(idx)
+    return idx

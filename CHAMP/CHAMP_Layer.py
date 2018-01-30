@@ -1,5 +1,5 @@
 from CHAMP.DataTools import GenerateMask
-from CHAMP.LowLevel import conv, Normalize, padTensor
+from CHAMP.LowLevel import conv, Normalize, padTensor, unravel_index
 from torch.nn.functional import conv2d, pad
 import torch
 import numpy as np
@@ -224,15 +224,18 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
             if doSym == 'abs':
                 _, m_ind = torch.max(torch.abs(ConvMod), 0)
             elif doSym == 'pos':
-                _, m_ind = torch.max(ConvMod * (ConvMod>0).type(torch.FloatTensor), 0)
+                _, m_ind = torch.max(ConvMod * (ConvMod>0).type(torch.FloatTensor), 0) ## Attention, ne passe pas en GPU
             else :
                 _, m_ind = torch.max(ConvMod, 0)
-            indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
+            #indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
+            indice = unravel_index(m_ind,Conv_size,GPU=GPU)
             m_value = Conv_one_image[m_ind]
             c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[1] - 1, dico_shape[2] - 1]
             coeff_memory[m_ind] += c_ind
+            #Sparse_code_addr[:, idx] = torch.LongTensor(
+            #    [int(i_m), int(indice[1]), int(indice[2]), int(indice[3])])
             Sparse_code_addr[:, idx] = torch.LongTensor(
-                [int(i_m), int(indice[1]), int(indice[2]), int(indice[3])])
+               [i_m, indice[1], indice[2], indice[3]])
             Sparse_code_coeff[idx] = float(coeff_memory[m_ind].numpy())
             I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]\
                 .add_(-c_ind * X_conv[indice[1], :, :])
