@@ -59,7 +59,8 @@ class Classif_Layer(nn.Module):
             self.accuracy_list.append(accuracy)
             self.loss_list.append(loss)
             if self.verbose != 0:
-                print('accuracy : {0:.2f} %, loss : {1:4f}'.format(accuracy,loss))
+                if ((epoch + 1) % (nb_epoch // self.verbose)) == 0:
+                    print('accuracy : {0:.2f} %, loss : {1:4f}'.format(accuracy,loss))
 
     def train_classif(self, data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1):
 
