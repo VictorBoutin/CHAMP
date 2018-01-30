@@ -13,7 +13,7 @@ def ContrastNormalized(data,avg_size=(5,5),GPU=False):
     img_size = data[0].size()
     if GPU == True :
         output_tensor = torch.cuda.FloatTensor(img_size)
-        to_conv = torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1].cuda()
+        to_conv = torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1]).cuda()
     else :
         output_tensor = torch.FloatTensor(img_size)
         to_conv = (torch.ones(avg_size)*1/(avg_size[0]*avg_size[0])).view(1,1,avg_size[0],avg_size[1])
