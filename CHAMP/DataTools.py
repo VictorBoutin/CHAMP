@@ -23,14 +23,18 @@ def ContrastNormalized(data,avg_size=(5,5),GPU=False):
         output_tensor[idx_batch,:,:,:,:] = each_batch - convol
     return output_tensor, data[1]
 
-def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0):
+def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0,GPU=False):
     dico_size = tuple(dico_size)
     params = {'ksize':dico_size, 'sigma':sigma,'lambd':lambd,
                   'gamma':0.5, 'psi':psi, 'ktype':cv2.CV_32F}
-
-    dico_gabor = torch.Tensor(nb_dico,1,dico_size[0],dico_size[1])
-    for i in range(nb_dico):
-        dico_gabor[i,0,:,:]=torch.FloatTensor(cv2.getGaborKernel(theta=i*math.pi/nb_dico,**params))
+    if GPU == True :
+        dico_gabor = torch.cuda.FloatTensor(nb_dico,1,dico_size[0],dico_size[1])
+        for i in range(nb_dico):
+            dico_gabor[i,0,:,:]=torch.cuda.FloatTensor(cv2.getGaborKernel(theta=i*math.pi/nb_dico,**params))
+    else :
+        dico_gabor = torch.FloatTensor(nb_dico,1,dico_size[0],dico_size[1])
+        for i in range(nb_dico):
+            dico_gabor[i,0,:,:]=torch.FloatTensor(cv2.getGaborKernel(theta=i*math.pi/nb_dico,**params))
     dico_gabor = Normalize(dico_gabor)
     return dico_gabor
 
