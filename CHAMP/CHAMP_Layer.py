@@ -231,16 +231,16 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
             indice = unravel_index(m_ind,Conv_size,GPU=GPU)
             m_value = Conv_one_image[m_ind]
             c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[1] - 1, dico_shape[2] - 1]
-            coeff_memory[m_ind] += c_ind
+            #coeff_memory[m_ind] += c_ind
             #Sparse_code_addr[:, idx] = torch.LongTensor(
             #    [int(i_m), int(indice[1]), int(indice[2]), int(indice[3])])
-            Sparse_code_addr[:, idx] = torch.LongTensor(
-               [i_m, indice[1], indice[2], indice[3]])
-            Sparse_code_coeff[idx] = float(coeff_memory[m_ind].numpy())
+            #Sparse_code_addr[:, idx] = torch.LongTensor(
+            #   [i_m, indice[1], indice[2], indice[3]])
+            #Sparse_code_coeff[idx] = float(coeff_memory[m_ind].numpy())
             I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]\
                 .add_(-c_ind * X_conv[indice[1], :, :])
             Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].contiguous().view(-1)
             idx += 1
-    code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
-                                    nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
+    #code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
+    #                                nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
     return code
