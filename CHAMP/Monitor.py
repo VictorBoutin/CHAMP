@@ -76,3 +76,22 @@ def DisplayConvergenceClassif(ClusterLayer,to_display=['error']):
 
 
         location +=1
+
+def DisplayCV(ClusterLayer,to_display=['error']):
+    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
+    fig = plt.figure(figsize=(10,2),subplotpars=subplotpars)
+    location = 1
+    for idx_type, each_type in enumerate(to_display):
+        each_type = str(each_type)
+        ax = fig.add_subplot(1,len(to_display),location)
+        #max_x = each_Layer.record[each_type].shape[0]*each_Layer.record_each
+        #ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
+        if each_type=='error':
+            to_plot = plt.plot(ClusterLayer[0])
+            ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
+        if each_type=='accu':
+            to_plot = plt.plot(ClusterLayer[1])
+            ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
+
+
+        location +=1

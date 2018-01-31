@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 from CHAMP.DataTools import Normalize, ContrastNormalized
 
 
-def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resize=None,GPU=False):
+def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resize=None,GPU=False,dowload=False):
     Composition = list()
     if Grayscale == True :
         Composition.append(transforms.Grayscale())
@@ -17,27 +17,27 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resiz
     Composition.append(transforms.ToTensor())
     transform = transforms.Compose(Composition)
     if name=='MNIST':
-        train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=False)
+        train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=download)
         train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=60000,shuffle=True,num_workers=2)
-        test_set = torchvision.datasets.MNIST(root=data_path, train=False,transform=transform,download=False)
+        test_set = torchvision.datasets.MNIST(root=data_path, train=False,transform=transform,download=download)
         test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
         data_training = list(train_data_loader)
         data_training = (data_training[0][0].unsqueeze(0).contiguous(),data_training[0][1].unsqueeze(0).contiguous())
         data_testing = list(test_data_loader)
         data_testing = (data_testing[0][0].unsqueeze(0).contiguous(),data_testing[0][1].unsqueeze(0).contiguous())
     if name == 'CIFAR':
-        train_set = torchvision.datasets.CIFAR10(root=data_path,train=True,transform=transform,download=False)
+        train_set = torchvision.datasets.CIFAR10(root=data_path,train=True,transform=transform,download=download)
         train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=50000,shuffle=True,num_workers=2)
-        test_set = torchvision.datasets.CIFAR10(root=data_path,train=False, transform=transform,download=False)
+        test_set = torchvision.datasets.CIFAR10(root=data_path,train=False, transform=transform,download=download)
         test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
         data_training = list(train_data_loader)
         data_training = (data_training[0][0].unsqueeze(0).contiguous(),data_training[0][1].unsqueeze(0).contiguous())
         data_testing = list(test_data_loader)
         data_testing = (data_testing[0][0].unsqueeze(0).contiguous(),data_testing[0][1].unsqueeze(0).contiguous())
     if name == 'STL10':
-        train_set = torchvision.datasets.STL10(root=data_path,split='train',transform=transform,download=False)
+        train_set = torchvision.datasets.STL10(root=data_path,split='train',transform=transform,download=download)
         train_data_loader = torch.utils.data.DataLoader(train_set, batch_size=50000,shuffle=True,num_workers=2)
-        test_set = torchvision.datasets.STL10(root=data_path,split='test', transform=transform,download=False)
+        test_set = torchvision.datasets.STL10(root=data_path,split='test', transform=transform,download=download)
         test_data_loader = torch.utils.data.DataLoader(test_set,batch_size=10000, shuffle=False,num_workers=2)
         data_training = list(train_data_loader)
         data_training = (data_training[0][0].unsqueeze(0).contiguous(),data_training[0][1].unsqueeze(0).contiguous())
