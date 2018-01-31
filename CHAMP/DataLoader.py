@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 from CHAMP.DataTools import Normalize, ContrastNormalized
 
 
-def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resize=None,GPU=False,dowload=False):
+def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resize=None,GPU=False,download=False):
     Composition = list()
     if Grayscale == True :
         Composition.append(transforms.Grayscale())
