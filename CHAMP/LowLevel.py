@@ -2,7 +2,7 @@ from torch.autograd import Variable
 from torch.nn.functional import conv2d,pad
 import torch
 
-def conv(data, filters, padding=0):
+def conv(data, filters, padding=0,GPU=False):
     '''
     Convolution fonction on tensor.
     INPUT :
@@ -14,6 +14,8 @@ def conv(data, filters, padding=0):
         * output <torch.tensor(nb_image, nb_polarities, w+padding-wd+1, h+padding-h_d+1)> : convulution between
         data and filters
     '''
+    if GPU:
+        filters,data = filters.cuda(), data.cuda()
     filters, data = Variable(filters), Variable(data)
     output = conv2d(data,filters,padding=padding,bias=None)
     return output.data

@@ -38,12 +38,18 @@ def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0,GPU=False):
     dico_gabor = Normalize(dico_gabor)
     return dico_gabor
 
-def Rebuilt(image,code,dico):
-    all_indice = torch.transpose(code._indices(),0,1)
-    output = torch.zeros(image.size())
-    padding = dico.size()[2]-1
-    for idx, (i,c) in enumerate(zip(all_indice,code._values())):
-        output[i[0],:,i[2]:i[2]+padding+1,i[3]:i[3]+padding+1].add_(c*dico[i[1],:,:,:])
+#def Rebuilt(image,code,dico):
+#    all_indice = torch.transpose(code._indices(),0,1)
+#    output = torch.zeros(image.size())
+#    padding = dico.size()[2]-1
+#    for idx, (i,c) in enumerate(zip(all_indice,code._values())):
+#        output[i[0],:,i[2]:i[2]+padding+1,i[3]:i[3]+padding+1].add_(c*dico[i[1],:,:,:])
+#    return output
+
+def Rebuilt(code,dico):
+    dico = dico.permute(1,0,2,3)
+    padding = dico.size()[-1]-1
+    output = conv(code,dico,padding=padding)
     return output
 
 def GenerateMask(dico, sigma=0.8, style='Gaussian'):
