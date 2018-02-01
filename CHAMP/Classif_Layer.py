@@ -62,7 +62,7 @@ class Classif_Layer(nn.Module):
         self.loss_list = []
         self.accuracy_list = []
         for epoch in range(nb_epoch):
-            loss = self.train1epoch(data_train_loader,lr=lr,momentum=momentum,optim=optim)
+            loss = self.train1epoch(data_train_loader,lr=lr,momentum=momentum,op=op)
             if data_test_loader is None:
                 data_test_loader = data_train_loader
             accuracy = self.test(data_test_loader)
