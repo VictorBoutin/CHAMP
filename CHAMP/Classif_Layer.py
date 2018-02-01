@@ -35,14 +35,14 @@ class Classif_Layer(nn.Module):
             num_features *= s
         return num_features
 
-    def train1epoch(self,data_train_loader,lr=0.1,momentum=0.9,optim='SGD'):
+    def train1epoch(self,data_train_loader,lr=0.1,momentum=0.9,op='SGD'):
         self.train()
         #criterion = nn.CrossEntropyLoss()
-        if optim == 'SGD':
+        if op == 'SGD':
             optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum)
-        elif optim == 'Adam':
+        elif op == 'Adam':
             optimizer = optim.Adam(self.parameters(), lr=lr)
-        elif optim == 'AdamSparse':
+        elif op == 'AdamSparse':
             optimizer = optim.SparseAdam(self.parameters(), lr=lr)
         for i, each_batch in enumerate(data_train_loader[0]):
             if self.GPU:
@@ -58,7 +58,7 @@ class Classif_Layer(nn.Module):
             optimizer.step()
         return loss.data[0]
 
-    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1,momentum=0.5,optim='SGD'):
+    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1,momentum=0.5,op='SGD'):
         self.loss_list = []
         self.accuracy_list = []
         for epoch in range(nb_epoch):
