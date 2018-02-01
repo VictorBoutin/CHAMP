@@ -6,23 +6,25 @@ import torch.nn.functional as F
 
 class Classif_Layer(nn.Module):
 
-    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False,loss='CE'):
+    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False,loss='CE',init='random'):
         super(Classif_Layer, self).__init__()
         self.nb_dico = nb_dico
         self.size_image = size_image
         self.type = 'Classification'
         self.verbose = verbose
         self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], nb_categories)
+        if init == 'zero':
+            self.fc1.weight.data._fill(0)
         self.GPU=GPU
-        if self.GPU :
-            self.cuda()
+
         if loss == 'CE':
             self.criterion = nn.CrossEntropyLoss()
         elif loss == 'MSE':
             self.criterion = nn.MSELoss()
         elif loss == 'NNL':
             self.criterion = nn.NLLLoss()
-
+        if self.GPU :
+            self.cuda()
     def forward(self, x):
         x = x.view(-1,self.nb_dico*self.size_image[0]*self.size_image[1])
         x = F.softmax(self.fc1(x),dim=1)
