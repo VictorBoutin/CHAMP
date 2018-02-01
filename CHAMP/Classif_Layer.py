@@ -35,10 +35,10 @@ class Classif_Layer(nn.Module):
             num_features *= s
         return num_features
 
-    def train1epoch(self,data_train_loader,lr=0.1):
+    def train1epoch(self,data_train_loader,lr=0.1,momentum=0.9):
         self.train()
         #criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(self.parameters(), lr=lr, momentum=0.9)
+        optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum)
         for i, each_batch in enumerate(data_train_loader[0]):
             if self.GPU:
                 data, target = each_batch.cuda(), data_train_loader[1][i,:].cuda()
@@ -53,7 +53,7 @@ class Classif_Layer(nn.Module):
             optimizer.step()
         return loss.data[0]
 
-    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1):
+    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1,momentum=0.5):
         self.loss_list = []
         self.accuracy_list = []
         for epoch in range(nb_epoch):
