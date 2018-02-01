@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 class Classif_Layer(nn.Module):
 
-    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False,loss='CrossEntropy'):
+    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False,loss='CE'):
         super(Classif_Layer, self).__init__()
         self.nb_dico = nb_dico
         self.size_image = size_image
@@ -16,7 +16,7 @@ class Classif_Layer(nn.Module):
         self.GPU=GPU
         if self.GPU :
             self.cuda()
-        if loss == 'CrossEntropy':
+        if loss == 'CE':
             self.criterion = nn.CrossEntropyLoss()
         elif loss == 'MSE':
             self.criterion = nn.MSELoss()
