@@ -14,7 +14,7 @@ class Classif_Layer(nn.Module):
         self.verbose = verbose
         self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], nb_categories)
         if init == 'zero':
-            self.fc1.weight.data._fill(0)
+            self.fc1.weight.data.fill_(0)
         self.GPU=GPU
 
         if loss == 'CE':
