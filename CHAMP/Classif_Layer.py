@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 class Classif_Layer(nn.Module):
 
-    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False):
+    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False,loss='CrossEntropy'):
         super(Classif_Layer, self).__init__()
         self.nb_dico = nb_dico
         self.size_image = size_image
@@ -16,7 +16,12 @@ class Classif_Layer(nn.Module):
         self.GPU=GPU
         if self.GPU :
             self.cuda()
-
+        if loss == 'CrossEntropy':
+            self.criterion = nn.CrossEntropyLoss()
+        elif loss == 'MSE':
+            self.criterion = nn.MSELoss()
+        elif loss == 'NNL':
+            self.criterion = nn.NLLLoss()
 
     def forward(self, x):
         x = x.view(-1,self.nb_dico*self.size_image[0]*self.size_image[1])
@@ -43,7 +48,7 @@ class Classif_Layer(nn.Module):
             optimizer.zero_grad()
 
             outputs = self(data)
-            loss = criterion(outputs, target)
+            loss = self.criterion(outputs, target)
             loss.backward()
             optimizer.step()
         return loss.data[0]
@@ -62,6 +67,20 @@ class Classif_Layer(nn.Module):
                 if ((epoch + 1) % (nb_epoch // self.verbose)) == 0:
                     print('accuracy : {0:.2f} %, loss : {1:4f}'.format(accuracy,loss))
 
+    def test(self, data_test_loader):
+        self.eval()
+        if self.GPU == True:
+            data,target = data_test_loader[0][0].cuda(),data_test_loader[1][0].cuda()
+        else :
+            data,target = data_test_loader[0][0],data_test_loader[1][0]
+        data,target = Variable(data),Variable(target)
+        output = self.forward(data)
+        prediction = output.data.max(1,keepdim=True)[1]
+        correct = prediction.eq(target.data.view_as(prediction)).cpu().sum()
+        accuracy = 100 * correct / data.size()[0]
+        return accuracy
+
+    '''
     def train_classif(self, data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1):
 
         criterion = nn.CrossEntropyLoss()
@@ -111,16 +130,4 @@ class Classif_Layer(nn.Module):
             if self.verbose != 0:
                 print('[%d, %5d] loss: %.8f' %(epoch + 1, i + 1, running_loss/batch_size))
         return self
-
-    def test(self, data_test_loader):
-        self.eval()
-        if self.GPU == True:
-            data,target = data_test_loader[0][0].cuda(),data_test_loader[1][0].cuda()
-        else :
-            data,target = data_test_loader[0][0],data_test_loader[1][0]
-        data,target = Variable(data),Variable(target)
-        output = self.forward(data)
-        prediction = output.data.max(1,keepdim=True)[1]
-        correct = prediction.eq(target.data.view_as(prediction)).cpu().sum()
-        accuracy = 100 * correct / data.size()[0]
-        return accuracy
+    '''
