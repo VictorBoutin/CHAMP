@@ -37,7 +37,7 @@ class Classif_Layer(nn.Module):
 
     def train1epoch(self,data_train_loader,lr=0.1):
         self.train()
-        criterion = nn.CrossEntropyLoss()
+        #criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(self.parameters(), lr=lr, momentum=0.9)
         for i, each_batch in enumerate(data_train_loader[0]):
             if self.GPU:
