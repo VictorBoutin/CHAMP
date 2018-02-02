@@ -12,7 +12,9 @@ class Classif_Layer(nn.Module):
         self.size_image = size_image
         self.type = 'Classification'
         self.verbose = verbose
+        self.norma = nn.BatchNorm2d(nb_dico)
         self.fc1 = nn.Linear(self.nb_dico*self.size_image[0]*self.size_image[1], nb_categories)
+
         if init == 'zero':
             self.fc1.weight.data.fill_(0)
         self.GPU=GPU
@@ -26,6 +28,7 @@ class Classif_Layer(nn.Module):
         if self.GPU :
             self.cuda()
     def forward(self, x):
+        x = self.norma(x)
         x = x.view(-1,self.nb_dico*self.size_image[0]*self.size_image[1])
         x = F.softmax(self.fc1(x),dim=1)
         return x
