@@ -16,7 +16,7 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resiz
         Composition.append(transforms.Resize(resize))
 
     Composition.append(transforms.ToTensor())
-    Composition.append(transforms.Normalize((0,),(1,)))
+    #Composition.append(transforms.Normalize((0,),(1,)))
 
     transform = transforms.Compose(Composition)
     if name=='MNIST':
