@@ -247,17 +247,56 @@ def ConvMP(image_input, dictionary, l0_sparseness=2,
     #code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
     #                                nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
     return code
-
-def ConvMP_GPU(image_input, dictionary, l0_sparseness=2,
+def ConvMP_numpy(image_input, dictionary, l0_sparseness=2,
                 modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual',GPU=False):
+                MaskMod='Residual'):
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
     nb_dico = dictionary.size()[0]
     padding = dico_shape[2] - 1
     X_conv = conv(dictionary, dictionary, padding=padding)
+    print('X_conv',X_conv.size())
     I_conv = conv(image_input, dictionary)
+    print('I_conv',I_conv.size())
     I_conv_padded = padTensor(I_conv, padding=padding)
+    print('I_conv_padded',I_conv_padded.size())
     Conv_size = tuple(I_conv.size())
-    Conv = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+    I_conv_ravel = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+    print('I_conv_ravel',I_conv_ravel.size())
+    ## transform torch into numpy
+    I_conv_ravel = I_conv_ravel.numpy()
+    X_conv = X_conv.numpy()
+    I_conv_padded = I_conv_padded.numpy()
+    for i_l0 in range(l0_sparseness):
+        m_ind = np.argmax(I_conv_ravel,axis=1)
+        m_value = np.max(I_conv_ravel,axis=1)
+        indice = np.unravel_index(m_ind, (2,24,24))
+        c_ind = m_value/X_conv[indice[0],indice[0],dico_shape[1] - 1, dico_shape[2] - 1]
+        #c_ind = m_value/X_conv(indice[0],indice[0])
+    return indice,m_value,c_ind
+
+def ConvMP_FAST(image_input, dictionary, l0_sparseness=2,
+                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
+                MaskMod='Residual'):
+    nb_image = image_input.size()[0]
+    image_size = image_input.size()[2]
+    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
+    nb_dico = dictionary.size()[0]
+    padding = dico_shape[2] - 1
+    X_conv = conv(dictionary, dictionary, padding=padding)
+    print('X_conv',X_conv.size())
+    I_conv = conv(image_input, dictionary)
+    print('I_conv',I_conv.size())
+    I_conv_padded = padTensor(I_conv, padding=padding)
+    print('I_conv_padded',I_conv_padded.size())
+    Conv_size = tuple(I_conv.size())
+    I_conv_ravel = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+    print('I_conv_ravel',I_conv_ravel.size())
+    for i_l0 in range(l0_sparseness):
+        m_value, m_ind = torch.max(I_conv_ravel, 1)
+        indice = np.unravel_index(m_ind, (2,24,24))#m_value = I_conv_ravel[:,m_ind]
+        indice = (torch.LongTensor(indice[0]),torch.LongTensor(indice[1]),torch.LongTensor(indice[2]))
+        #a = X_conv[indice[0],indice[0],dico_shape[1] - 1, dico_shape[2] - 1]
+        #print(a.size())
+    return m_ind, m_value,indice,X_conv

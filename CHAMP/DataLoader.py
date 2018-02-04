@@ -14,7 +14,10 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resiz
         Composition.append(transforms.Grayscale())
     if resize is not None :
         Composition.append(transforms.Resize(resize))
+
     Composition.append(transforms.ToTensor())
+    Composition.append(transforms.Normalize((0,),(1,)))
+
     transform = transforms.Compose(Composition)
     if name=='MNIST':
         train_set = torchvision.datasets.MNIST(root=data_path,train=True,transform=transform,download=download)
@@ -46,14 +49,16 @@ def LoadData(name,data_path,decorrelate=True,avg_size=(5,5),Grayscale=True,resiz
     if name == 'Face':
         data_training = LoadFaceDB(data_path,size = (92,92), nb_batch=1, to_shuffle=True)
         data_testing = (data_training[0].clone(),data_training[1].clone())
+
     if GPU == True :
         data_training = (data_training[0].cuda(),data_training[1].cuda())
         data_testing = (data_testing[0].cuda(),data_testing[1].cuda())
     if decorrelate == True:
         data_training = ContrastNormalized(data_training,avg_size=avg_size,GPU=GPU)
         data_testing = ContrastNormalized(data_testing,avg_size=avg_size,GPU=GPU)
-    return (data_training,data_testing)
 
+    return (data_training,data_testing)
+    #return (train_data_loader,test_data_loader)
 
 def LoadFaceDB(path,size = (68,68), nb_batch=1, to_shuffle=True) :
     file_list = list()
