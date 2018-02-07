@@ -1,6 +1,7 @@
 from torch.autograd import Variable
 from torch.nn.functional import conv2d,pad
 import torch
+import numpy as np
 
 def conv(data, filters, padding=0,GPU=False):
     '''
@@ -51,6 +52,12 @@ def Normalize(to_normalize):
     norm_int = norm.unsqueeze(1).expand_as(reshaped)
     dico = reshaped.div(norm_int).view(size)
     return dico
+
+def PatchExtractor(data,loc_x,loc_y,size):
+    das = np.lib.stride_tricks.as_strided(data, (data.shape[2]-size+1, data.shape[3]-size+1, data.shape[0], data.shape[1], size, size), data.strides[-2:] + data.strides)
+    #patches = das[(loc_x,loc_y, np.arange(data.shape[0]))]
+    #return patches
+    return das
 
 def unravel_index(indice,size,GPU=False):
     idx=[]
