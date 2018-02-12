@@ -40,11 +40,11 @@ class Classif_Layer(nn.Module):
             num_features *= s
         return num_features
 
-    def train1epoch(self,data_train_loader,lr=0.1,momentum=0.9,op='SGD'):
+    def train1epoch(self,data_train_loader,lr=0.1,momentum=0.9, weight_decay=0,op='SGD'):
         self.train()
         #criterion = nn.CrossEntropyLoss()
         if op == 'SGD':
-            optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum)
+            optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum,weight_decay=weight_decay)
         elif op == 'Adam':
             optimizer = optim.Adam(self.parameters(), lr=lr)
         elif op == 'AdamSparse':
@@ -63,11 +63,11 @@ class Classif_Layer(nn.Module):
             optimizer.step()
         return loss.data[0]
 
-    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1,momentum=0.5,op='SGD'):
+    def TrainClassifier(self,data_train_loader, nb_epoch=5, data_test_loader=None, lr=0.1,momentum=0.5, weight_decay=0,op='SGD'):
         self.loss_list = []
         self.accuracy_list = []
         for epoch in range(nb_epoch):
-            loss = self.train1epoch(data_train_loader,lr=lr,momentum=momentum,op=op)
+            loss = self.train1epoch(data_train_loader,lr=lr,momentum=momentum,weight_decay=weight_decay,op=op)
             if data_test_loader is None:
                 data_test_loader = data_train_loader
             accuracy = self.test(data_test_loader)
@@ -117,7 +117,7 @@ class Classif_Layer_1CONV(nn.Module):
 
     def forward(self, x):
         x = self.norma(x)
-        x =self.conv1(x)
+        x = self.conv1(x)
         x = x.view(-1,10*self.size_conv1*self.size_conv1)
         x = F.softmax(self.fc1(x),dim=1)
         return x
