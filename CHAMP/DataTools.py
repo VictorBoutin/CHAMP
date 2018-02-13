@@ -91,7 +91,7 @@ def GenerateMask(dico, sigma=0.8, style='Gaussian'):
     return mask
 
 def ChangeBatchSize(data, batch_size):
-    nb_image = data[0].size()[1]
+    nb_image = data[0].size()[1]*data[0].size()[0]
     image_size=data[0].size()[2:]
     image = data[0].contiguous().view(nb_image//batch_size,batch_size,image_size[0],image_size[1],image_size[2])
     label = data[1].contiguous().view(nb_image//batch_size,-1)

@@ -3,9 +3,12 @@ from torch.nn.functional import conv2d,pad, max_pool2d
 import torch
 import numpy as np
 
-#def maxpool2D(data,kernel):
-#    for i_batch in range(data.size()[0]):
- 
+def maxpool2D(data,kernel):
+    output = torch.zeros(data[0].size()[0],data[0].size()[1],data[0].size()[2],data[0].size()[3]//kernel,data[0].size()[4]//kernel)
+    for i_batch in range(data[0].size()[0]):
+        batch = Variable(data[0][i_batch,:,:,:,:])
+        output[i_batch,:,:,:,:] = max_pool2d(batch,kernel_size=kernel).data
+    return (output,data[1])
 
 def conv(data, filters, padding=0,GPU=False,groups=1):
     '''
