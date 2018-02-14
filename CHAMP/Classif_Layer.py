@@ -97,10 +97,11 @@ class Classif_Layer_1CONV(nn.Module):
         self.size_image = size_image
         self.type = 'Classification'
         self.verbose = verbose
+        self.depth_L1 = depth_L1
         self.norma = nn.BatchNorm2d(nb_dico)
-        self.conv1 = nn.Conv2d(self.nb_dico, depth_L1, kernel_size=kernel_size)
+        self.conv1 = nn.Conv2d(self.nb_dico, self.depth_L1, kernel_size=kernel_size)
         self.size_conv1 = size_image[0]-kernel_size+1
-        self.fc1 = nn.Linear(depth_L1*self.size_conv1*self.size_conv1, nb_categories)
+        self.fc1 = nn.Linear(self.depth_L1*self.size_conv1*self.size_conv1, nb_categories)
 
         if init == 'zero':
             self.fc1.weight.data.fill_(0)
@@ -118,7 +119,7 @@ class Classif_Layer_1CONV(nn.Module):
     def forward(self, x):
         x = self.norma(x)
         x = self.conv1(x)
-        x = x.view(-1,10*self.size_conv1*self.size_conv1)
+        x = x.view(-1,self.depth_L1*self.size_conv1*self.size_conv1)
         x = F.softmax(self.fc1(x),dim=1)
         return x
 
