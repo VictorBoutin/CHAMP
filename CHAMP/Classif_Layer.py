@@ -91,16 +91,16 @@ class Classif_Layer(nn.Module):
         return accuracy
 
 class Classif_Layer_1CONV(nn.Module):
-    def __init__(self, nb_dico, size_image, nb_categories, verbose=0,GPU=False,loss='CE',init='random',kernel_size=5):
+    def __init__(self, nb_dico,size_image, nb_categories, depth_L1=10, verbose=0,GPU=False,loss='CE',init='random',kernel_size=5):
         super(Classif_Layer_1CONV, self).__init__()
         self.nb_dico = nb_dico
         self.size_image = size_image
         self.type = 'Classification'
         self.verbose = verbose
         self.norma = nn.BatchNorm2d(nb_dico)
-        self.conv1 = nn.Conv2d(self.nb_dico, 10, kernel_size=kernel_size)
+        self.conv1 = nn.Conv2d(self.nb_dico, depth_L1, kernel_size=kernel_size)
         self.size_conv1 = size_image[0]-kernel_size+1
-        self.fc1 = nn.Linear(10*self.size_conv1*self.size_conv1, nb_categories)
+        self.fc1 = nn.Linear(depth_L1*self.size_conv1*self.size_conv1, nb_categories)
 
         if init == 'zero':
             self.fc1.weight.data.fill_(0)
