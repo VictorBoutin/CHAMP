@@ -4,9 +4,20 @@ import numpy as np
 
 def DisplayDico(dico):
     subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
-    dico_size = tuple(dico.size()[2:])
-    nb_dico = dico.size()[0]
-    out_dico = dico.numpy().reshape(-1,dico_size[0],dico_size[1])
+    try :
+        if dico.type() in ['torch.FloatTensor','torch.LongTensor']:
+            dico = dico.numpy()
+    except :
+        pass
+    dico_size = tuple(dico.shape[2:])
+    #dico_size = tuple(dico.size()[2:])
+    #nb_dico = dico.size()[0]
+    nb_dico = dico.shape[0]
+    nb_channel = dico.shape[1]
+    if nb_channel != 1:
+        raise NameError('Do Not Support Multi Channel Plot')
+    #out_dico = dico.numpy().reshape(-1,dico_size[0],dico_size[1])
+    out_dico = dico.reshape(-1,dico_size[0],dico_size[1])
     fig = plt.figure(figsize=(10,(nb_dico//10+1)), subplotpars=subplotpars)
     for i, each_filter in enumerate(out_dico):
         #print(each_filter.shape)
@@ -77,10 +88,13 @@ def DisplayConvergenceClassif(ClusterLayer,to_display=['error']):
 
         location +=1
 
-def DisplayCV(ClusterLayer,to_display=['error']):
+def DisplayCV(ClusterLayer,to_display=['error'],title=None):
     subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
     fig = plt.figure(figsize=(10,2),subplotpars=subplotpars)
     location = 1
+    if title is not None:
+        title = title
+    else: title == ''
     for idx_type, each_type in enumerate(to_display):
         each_type = str(each_type)
         ax = fig.add_subplot(1,len(to_display),location)
@@ -88,10 +102,10 @@ def DisplayCV(ClusterLayer,to_display=['error']):
         #ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
         if each_type=='error':
             to_plot = plt.plot(ClusterLayer[0])
-            ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
+            ax.set_title( str(title)+ ' Classification Layer : {0}'.format(each_type),fontsize= 8)
         if each_type=='accu':
             to_plot = plt.plot(ClusterLayer[1])
-            ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
+            ax.set_title( str(title)+ ' Classification Layer : {0}'.format(each_type),fontsize= 8)
 
 
         location +=1
