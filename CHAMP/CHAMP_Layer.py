@@ -9,7 +9,7 @@ from CHAMP.LowLevel import PatchExtractor
 
 class CHAMP_Layer_np:
     def __init__(self, l0_sparseness=10, sigma=None, nb_dico=30, dico_size=(13, 13),
-                     verbose=0, doSym=False, FilterStyle='Gaussian', MaskMod='Residual'):
+                     verbose=0, doSym=False, FilterStyle='Gaussian', MaskMod='Residual',alpha=None):
 
         self.nb_dico = nb_dico
         self.dico_size = dico_size
@@ -21,7 +21,7 @@ class CHAMP_Layer_np:
         self.doSym = doSym
         self.FilterStyle = FilterStyle
         self.MaskMod = MaskMod
-
+        self.alpha = alpha
     def RunLayer(self, dataset, dictionary=None):
         if dictionary is not None :
             self.dictionary = dictionary
@@ -30,7 +30,7 @@ class CHAMP_Layer_np:
         for i, (image) in enumerate(dataset[0]):
             #label = dataset[1][i]
             return_fn = ConvMP_np(image, self.dictionary, l0_sparseness=self.l0_sparseness,
-                                    modulation=None, train=False, doSym=self.doSym)
+                                    modulation=None, train=False, doSym=self.doSym, alpha=self.alpha)
             code_one_batch, activation = return_fn
             code[i,:,:,:,:] = code_one_batch
         return (torch.FloatTensor(code),dataset[1])
@@ -44,6 +44,7 @@ class CHAMP_Layer_np:
         if seed is not None :
             np.random.seed(seed)
         self.dictionary = np.random.rand(self.nb_dico, nb_channel, self.dico_size[0], self.dico_size[1])
+        #self.dictionary = np.ones((self.nb_dico, nb_channel, self.dico_size[0], self.dico_size[1]))
         self.dictionary = Normalize(torch.FloatTensor(self.dictionary))
         self.activation = torch.zeros(self.nb_dico)
         self.res_list = list()
@@ -54,7 +55,7 @@ class CHAMP_Layer_np:
             for i, image in enumerate(data_set[0]):
                 return_fn = ConvMP_np(image, self.dictionary,
                                 l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
-                                doSym=self.doSym, mask=None)
+                                doSym=self.doSym, mask=None, alpha=self.alpha)
                 residual_patch, res, nb_activation = return_fn
                 self.dictionary.add_(self.eta*torch.FloatTensor(residual_patch))
                 self.dictionary = Normalize(self.dictionary)
@@ -71,7 +72,7 @@ class CHAMP_Layer_np:
 
 def ConvMP_np(image_input, dictionary, l0_sparseness=2,
                 modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual'):
+                MaskMod='Residual',alpha=None):
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
@@ -98,14 +99,16 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
             m_value = Conv_one_image[m_ind]
             indice = np.unravel_index(m_ind, Conv_size)
             c_ind = m_value/X_conv[indice[1],indice[1],dico_shape[1] - 1, dico_shape[2] - 1]
+            if alpha is not None :
+                c_ind = alpha*c_ind
             code[i_m, indice[1], indice[2], indice[3]] += c_ind
             I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]+= -c_ind * X_conv[indice[1], :, :]
             Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].reshape(-1)
             activation[indice[1]]+=1
             if train == True :
-                residual_patch[indice[1],:,:,:] += c_ind*residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
+                #residual_patch[indice[1],:,:,:] += c_ind*residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
                 residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1] += -c_ind * dico[indice[1], :, :, :]
-                #residual_patch[indice[1],:,:,:] += residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
+                residual_patch[indice[1],:,:,:] += residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
     activation[activation==0]=1
     if train == True:
         residual_patch = residual_patch/ activation[:,np.newaxis,np.newaxis,np.newaxis]
@@ -115,6 +118,64 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
         to_return = (code,activation)
     return to_return
 
+
+def ConvMP_np_PCA(image_input, dictionary, l0_sparseness=2,
+                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
+                MaskMod='Residual',alpha=None):
+    nb_image = image_input.size()[0]
+    image_size = image_input.size()[2]
+    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
+    nb_dico = dictionary.size()[0]
+    padding = dico_shape[2] - 1
+    tic = time.time()
+    X_conv = conv(dictionary, dictionary, padding=padding)
+    I_conv = conv(image_input, dictionary)
+    I_conv_padded = padTensor(I_conv, padding=padding)
+    Conv_size = tuple(I_conv.size())
+    I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+    X_conv = X_conv.numpy()
+    I_conv_padded = I_conv_padded.numpy()
+    code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
+    activation = np.zeros(nb_dico)
+    dico = dictionary.numpy()
+    # Specific to PCA
+    vec_indice = np.zeros((nb_image*l0_sparseness))
+    vec_address = np.zeros((nb_image*l0_sparseness))
+    all_patches = np.zeros((nb_image*l0_sparseness,dico_shape[0],dico_shape[1],dico_shape[2]))
+    if train == True :
+        residual_patch = np.zeros((nb_dico,dico_shape[0],dico_shape[1],dico_shape[2]))
+        residual_image = image_input.clone().numpy()
+    idx=0
+    for i_m in range(nb_image):
+        Conv_one_image = I_conv_ravel[i_m,:]
+        for i_l0 in range(l0_sparseness):
+            m_ind = np.argmax(Conv_one_image,axis=0)
+            m_value = Conv_one_image[m_ind]
+            indice = np.unravel_index(m_ind, Conv_size)
+            c_ind = m_value/X_conv[indice[1],indice[1],dico_shape[1] - 1, dico_shape[2] - 1]
+            if alpha is not None :
+                c_ind = alpha*c_ind
+            code[i_m, indice[1], indice[2], indice[3]] += c_ind
+            vec_indice[idx]=c_ind
+            vec_address[idx]=indice[1]
+            I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]+= -c_ind * X_conv[indice[1], :, :]
+            Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].reshape(-1)
+            activation[indice[1]]+=1
+            all_patches[idx,:,:,:] = c_ind * dico[indice[1], :, :, :]
+            if train == True :
+                #residual_patch[indice[1],:,:,:] += c_ind*residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
+                all_patches[idx,:,:,:] = residual_image[i_m,:,indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
+                residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1] += -c_ind * dico[indice[1], :, :, :]
+                residual_patch[indice[1],:,:,:] += residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
+            idx += 1
+    activation[activation==0]=1
+    if train == True:
+        residual_patch = residual_patch/ activation[:,np.newaxis,np.newaxis,np.newaxis]
+        res = torch.mean(torch.norm(torch.FloatTensor(residual_image).view(nb_image, -1),p=2,dim=1))
+        to_return = (residual_patch, res,activation)
+    else :
+        to_return = (code,activation)
+    return vec_indice, vec_address, all_patches,res
 
 
 class CHAMP_Layer_to:
