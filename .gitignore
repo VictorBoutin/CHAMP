@@ -1,7 +1,7 @@
 CHAMP/__pycache__
 Probe/.ipynb_checkpoints/UseExample-checkpoint.ipynb
 CHAMP.egg-info
-
+CHAMP/Old/
 *.pyc
 .ipynb_checkpoints
 .idea
