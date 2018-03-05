@@ -10,13 +10,10 @@ def DisplayDico(dico):
     except :
         pass
     dico_size = tuple(dico.shape[2:])
-    #dico_size = tuple(dico.size()[2:])
-    #nb_dico = dico.size()[0]
     nb_dico = dico.shape[0]
     nb_channel = dico.shape[1]
     if nb_channel != 1:
         raise NameError('Do Not Support Multi Channel Plot')
-    #out_dico = dico.numpy().reshape(-1,dico_size[0],dico_size[1])
     out_dico = dico.reshape(-1,dico_size[0],dico_size[1])
     fig = plt.figure(figsize=(10,(nb_dico//10+1)), subplotpars=subplotpars)
     for i, each_filter in enumerate(out_dico):
@@ -27,6 +24,23 @@ def DisplayDico(dico):
         ax = fig.add_subplot(nb_dico//10+1,10,i+1)
         cmax = np.abs(each_filter.max())
         ax.imshow(each_filter, cmap='gray', vmin=-cmax, vmax=cmax)
+        ax.set_xticks(())
+        ax.set_yticks(())
+
+def DisplayWhere(where):
+    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
+    try :
+        if where.type() in ['torch.FloatTensor','torch.LongTensor']:
+            dico = where.numpy()
+    except :
+        pass
+    where_size = tuple(where.shape[-2:])
+    nb_map = where.shape[0]
+    fig = plt.figure(figsize=(10,(nb_map//10+1)), subplotpars=subplotpars)
+    for i in range(nb_map):
+        ax = fig.add_subplot(nb_map//10+1,10,i+1)
+        cmax = np.abs(where[i,:,:].max())
+        ax.imshow(where[i,:,:], vmin=0, vmax=cmax)
         ax.set_xticks(())
         ax.set_yticks(())
 
