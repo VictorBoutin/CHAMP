@@ -10,7 +10,7 @@ def maxpool2D(data,kernel):
         output[i_batch,:,:,:,:] = max_pool2d(batch,kernel_size=kernel).data
     return (output,data[1])
 
-def conv(data, filters, padding=0,GPU=False,groups=1):
+def conv(data, filters, padding=0,GPU=False,groups=1,stride=1):
     '''
     Convolution fonction on tensor.
     INPUT :
@@ -25,7 +25,29 @@ def conv(data, filters, padding=0,GPU=False,groups=1):
     if GPU:
         filters,data = filters.cuda(), data.cuda()
     filters, data = Variable(filters), Variable(data)
-    output = conv2d(data,filters,padding=padding,bias=None,groups=groups)
+    output = conv2d(data,filters,padding=padding,bias=None,groups=groups,stride=stride)
+    return output.data
+
+def conv_valid(data, filters, padding=0,GPU=False,groups=1):
+    '''
+    Convolution fonction on tensor.
+    INPUT :
+        * data <torch.tensor(nb_image, nb_polarities, w, h)> : input image in a tensor format
+        * filters <torch.tensor(nb_dico, nb_polarities, w_d, h_d)> :  filters in a tensor format
+        * padding <int> or <(int,int,int,int)> : padding of the 2 last dimensions. If this is an <int>
+            all the vertical/horizontal & right/left paddings are the same.
+    OUTPUT :
+        * output <torch.tensor(nb_image, nb_polarities, w+padding-wd+1, h+padding-h_d+1)> : convulution between
+        data and filters
+    '''
+    filters_size = filters.size()[-1]
+    if GPU:
+        filters,data = filters.cuda(), data.cuda()
+    filters, data = Variable(filters), Variable(data)
+    pad_size = filters_size//2
+    padded_tensor = pad(data,pad=(pad_size, pad_size, pad_size, pad_size),
+                      mode='reflect', value=0)
+    output = conv2d(padded_tensor,filters,bias=None,groups=groups)
     return output.data
 
 def padTensor(data, padding,mode='constant',value=0):
@@ -59,6 +81,10 @@ def Normalize(to_normalize):
     norm_int = norm.unsqueeze(1).expand_as(reshaped)
     dico = reshaped.div(norm_int).view(size)
     return dico
+
+def RotateDico90(dico,k=2):
+    dico_rotated = np.rot90(dico.numpy(),k=2,axes=(2, 3)).copy()
+    return torch.FloatTensor(dico_rotated)
 
 def PatchExtractor(data,loc_x,loc_y,size):
     das = np.lib.stride_tricks.as_strided(data, (data.shape[2]-size+1, data.shape[3]-size+1, data.shape[0], data.shape[1], size, size), data.strides[-2:] + data.strides)
