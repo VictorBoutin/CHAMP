@@ -4,12 +4,12 @@ from torch.nn.functional import conv2d
 import pickle
 import cv2
 import math
-from CHAMP.LowLevel import conv, Normalize, padTensor
+from CHAMP.LowLevel import conv, Normalize, padTensor, RotateDico90
 
 
 
 def ContrastNormalized(data,avg_size=(5,5),GPU=False):
-    assert avg_size[0]%2 == 1, 'deccorlation filters size should be odd'
+    #assert avg_size[0]%2 == 1, 'deccorlation filters size should be odd'
     img_size = data[0].size()
     if GPU == True :
         output_tensor = torch.cuda.FloatTensor(img_size)
@@ -46,17 +46,27 @@ def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0,GPU=False):
 #        output[i[0],:,i[2]:i[2]+padding+1,i[3]:i[3]+padding+1].add_(c*dico[i[1],:,:,:])
 #    return output
 
-def Rebuilt(code,dico):
+
+
+def Rebuilt(code,dico_in,idx=None):
+    dico = dico_in.clone()
+    if idx is not None :
+        dico[idx,:,:,:]=0
     dico = dico.permute(1,0,2,3)
+    dico_rotated = RotateDico90(dico)
     padding = dico.size()[-1]-1
-    output = conv(code,dico,padding=padding)
+    output = conv(code,dico_rotated,padding=padding)
     return output
 
-def GenerateMask(dico, sigma=0.8, style='Gaussian'):
-    dico_size = tuple(dico.size())
-    R = dico_size[2]//2
-    grid = torch.arange(-1*R,R+1)
-    X_grid = grid.unsqueeze(1).expand((dico_size[2],dico_size[3]))
+def GenerateMask(full_size, sigma=0.8, style='Gaussian',start_R=10):
+    dico_size = (full_size[-2],full_size[-1])
+    R = dico_size[-1]//2
+    if dico_size[-1]%2 == 1:
+        grid = torch.arange(-1*R,R+1)
+    else :
+        grid = torch.cat((torch.arange(-1*R,0,1),torch.arange(1,R+1,1)),0)
+    #print(grid)
+    X_grid = grid.unsqueeze(1).expand((dico_size[-2],dico_size[-1]))
     Y_grid  = torch.t(X_grid)
     radius = torch.sqrt(X_grid**2 + Y_grid**2)
     if style == 'Gaussian':
@@ -80,15 +90,32 @@ def GenerateMask(dico, sigma=0.8, style='Gaussian'):
         mask = mask*binary_mask
     elif style == 'GaussianBinarySuperMagic':
         grid = 0.5*torch.arange(-1*R,R+1)
-        X_grid = grid.unsqueeze(1).expand((dico_size[2],dico_size[3]))
+        X_grid = grid.unsqueeze(1).expand((dico_size[-2],dico_size[-1]))
         Y_grid  = torch.t(X_grid)
         radius = torch.sqrt(X_grid**2 + Y_grid**2)
         mask = torch.exp(-0.5*radius**2/(R+3)**2/sigma**2)
         binary_mask = (radius < R+1).type(torch.FloatTensor)
         mask = mask*binary_mask
-    mask = mask.unsqueeze(0).unsqueeze(1).expand_as(dico)
+    elif style == 'Custom':
+        grid_or = torch.zeros(dico_size[-1])
+        grid = torch.arange(-1*start_R,start_R+1)
+        grid_or[0:start_R]=grid[0:start_R]
+        grid_or[-start_R:]=grid[-1*start_R:]
+        X_grid = grid_or.unsqueeze(1).expand((dico_size[-2],dico_size[-1]))
+        Y_grid  = torch.t(X_grid)
+        radius = torch.sqrt(X_grid**2 + Y_grid**2)
+        mask = torch.exp(-0.5*radius**2/R**2/sigma**2)
+    else :
+        print('style unknown')
+
+    mask = mask.unsqueeze(0).unsqueeze(1).expand(full_size)
 
     return mask
+
+def FilterInputData(data,sigma=0.8,style='Gaussian',start_R=10):
+    Filter = GenerateMask(data[0].size(),sigma=sigma,style = style, start_R = start_R)
+    data_filtered = torch.mul(data[0],Filter)
+    return (data_filtered,data[1])
 
 def ChangeBatchSize(data, batch_size):
     nb_image = data[0].size()[1]*data[0].size()[0]
