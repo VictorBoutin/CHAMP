@@ -5,30 +5,29 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 import time
-from CHAMP.LowLevel import PatchExtractor
-
+from CHAMP.LowLevel import PatchExtractor, RotateDico90
+from CHAMP.Monitor import DisplayDico
 class CHAMP_Layer_np:
-    def __init__(self, l0_sparseness=10, sigma=None, nb_dico=30, dico_size=(13, 13),
-                     verbose=0, doSym=False, FilterStyle='Gaussian', MaskMod='Residual',alpha=None):
+    def __init__(self, l0_sparseness=10, nb_dico=30, dico_size=(13, 13),
+                     verbose=0, doSym=False, alpha=None, mask=None,stride=1):
 
         self.nb_dico = nb_dico
         self.dico_size = dico_size
         self.l0_sparseness = l0_sparseness
         self.verbose = verbose
-        self.sigma = sigma
         self.trained = False
         self.type = 'Unsupervised'
         self.doSym = doSym
-        self.FilterStyle = FilterStyle
-        self.MaskMod = MaskMod
+        self.mask = mask
         self.alpha = alpha
+        self.stride = stride
+
     def RunLayer(self, dataset, dictionary=None):
         if dictionary is not None :
             self.dictionary = dictionary
         code_size = (dataset[0].size()[-2]-self.dico_size[0]+1,dataset[0].size()[-1]-self.dico_size[1]+1)
         code = np.zeros((dataset[0].size()[0],dataset[0].size()[1],self.nb_dico,code_size[0],code_size[1]))
         for i, (image) in enumerate(dataset[0]):
-            #label = dataset[1][i]
             return_fn = ConvMP_np(image, self.dictionary, l0_sparseness=self.l0_sparseness,
                                     modulation=None, train=False, doSym=self.doSym, alpha=self.alpha)
             code_one_batch, activation = return_fn
@@ -36,52 +35,79 @@ class CHAMP_Layer_np:
         return (torch.FloatTensor(code),dataset[1])
 
 
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=0.01, nb_record=4,dico_init=None,seed=None):
+    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,dico_init=None,seed=None):
         self.nb_epoch = nb_epoch
         self.eta = eta
         self.eta_homeo = eta_homeo
+
         nb_channel = data_set[0].size()[2]
         if seed is not None :
             np.random.seed(seed)
-        self.dictionary = np.random.rand(self.nb_dico, nb_channel, self.dico_size[0], self.dico_size[1])
-        #self.dictionary = np.ones((self.nb_dico, nb_channel, self.dico_size[0], self.dico_size[1]))
+        if dico_init is None :
+            self.dictionary = np.random.rand(self.nb_dico, nb_channel, self.dico_size[0], self.dico_size[1])
+        else :
+            self.dictionary = dico_init
+        if self.mask is None:
+            self.mask = np.ones_like(self.dictionary)
+        else :
+            self.mask = self.mask.numpy()
+        #self.dictionary = self.dictionary*self.mask
         self.dictionary = Normalize(torch.FloatTensor(self.dictionary))
-        self.activation = torch.zeros(self.nb_dico)
+
         self.res_list = list()
-        modulation = torch.ones(self.nb_dico)
+        conv_size = data_set[0].size(-1)-self.dico_size[0]+1
+        if self.eta_homeo is not None :
+            modulation = np.ones(self.nb_dico)
+        else :
+            modulation = None
         tic = time.time()
         first_epoch = 1
         for i_epoch in range(self.nb_epoch):
-            for i, image in enumerate(data_set[0]):
-                return_fn = ConvMP_np(image, self.dictionary,
+            when = np.zeros((self.nb_dico,self.l0_sparseness))
+            self.activation = np.zeros(self.nb_dico)
+            for idx_batch, batch  in enumerate(data_set[0]):
+                return_fn = ConvMP_np(batch, self.dictionary,
                                 l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
-                                doSym=self.doSym, mask=None, alpha=self.alpha)
-                residual_patch, res, nb_activation = return_fn
-                self.dictionary.add_(self.eta*torch.FloatTensor(residual_patch))
+                                doSym=self.doSym, mask=self.mask, alpha=self.alpha,stride=self.stride,when=when)
+                self.residual_image, self.code, res, nb_activation,self.where,self.when,self.how = return_fn
+                dictionary,self.patches = learn(self.code, self.dictionary, self.residual_image,self.eta)
+                #dictionary = learn2(self.code, self.dictionary, self.residual_image,self.eta)
+                self.dictionary = torch.FloatTensor(dictionary)
                 self.dictionary = Normalize(self.dictionary)
                 self.res_list.append(res)
-                self.activation += torch.FloatTensor(nb_activation)
+                self.activation += nb_activation
+                if self.eta_homeo is not None :
+                     modulation = UpdateModulation(modulation, self.activation, eta_homeo=self.eta_homeo)
             if self.verbose != 0:
                 if ((i_epoch + 1) % (self.nb_epoch // self.verbose)) == 0:
                     timing = time.time() - tic
                     print('epoch {0} - {1} done in {2}m{3}s'.format(first_epoch,
                                                                     i_epoch + 1, int(timing // 60), int(timing % 60)))
                     tic, first_epoch = time.time(),  i_epoch + 1
+            #DisplayDico(self.dictionary)
         return self.dictionary
 
+def UpdateModulation( Modulation, activation, eta_homeo,how=None):
+    target = np.mean(activation)
+    tau = - (np.max(activation)-target)/np.log(0.1)
+    modulation_function = np.exp( (1-eta_homeo)*np.log(Modulation) - eta_homeo*((activation-target)/tau))
+    return modulation_function
 
 def ConvMP_np(image_input, dictionary, l0_sparseness=2,
                 modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual',alpha=None):
+                alpha=None,stride=1,when=None):
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
     nb_dico = dictionary.size()[0]
-    padding = dico_shape[2] - 1
+    padding = dico_shape[2] - stride
     tic = time.time()
-    X_conv = conv(dictionary, dictionary, padding=padding)
-    I_conv = conv(image_input, dictionary)
-    I_conv_padded = padTensor(I_conv, padding=padding)
+    if mask is None :
+        mask = np.ones(dictionary.size())
+    X_conv = conv(dictionary, dictionary, padding=padding,stride=stride)
+    X_conv_size = X_conv.size()[-2:]
+    I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
+    I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
     Conv_size = tuple(I_conv.size())
     I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
     X_conv = X_conv.numpy()
@@ -89,435 +115,84 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
     code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
     activation = np.zeros(nb_dico)
     dico = dictionary.numpy()
+    where = np.zeros((nb_dico,Conv_size[-2],Conv_size[-1]))
+    how = np.zeros((nb_dico))
+    #if modulation is None:
+    #    modulation = np.ones(nb_dico)
+    if modulation is not None :
+        Mod = modulation[:,np.newaxis,np.newaxis]*np.ones((Conv_size[1], Conv_size[2], Conv_size[3]))
+        Mod = Mod.reshape(Conv_size[1]* Conv_size[2]*Conv_size[3])
     if train == True :
-        residual_patch = np.zeros((nb_dico,dico_shape[0],dico_shape[1],dico_shape[2]))
         residual_image = image_input.clone().numpy()
     for i_m in range(nb_image):
         Conv_one_image = I_conv_ravel[i_m,:]
         for i_l0 in range(l0_sparseness):
-            m_ind = np.argmax(Conv_one_image,axis=0)
+            if modulation is None :
+                Conv_Mod = Conv_one_image
+            else :
+                Conv_Mod = Conv_one_image*Mod
+            m_ind = np.argmax(Conv_Mod,axis=0)
+            #m_ind = np.argmax(Conv_one_image,axis=0)
             m_value = Conv_one_image[m_ind]
             indice = np.unravel_index(m_ind, Conv_size)
-            c_ind = m_value/X_conv[indice[1],indice[1],dico_shape[1] - 1, dico_shape[2] - 1]
+            c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
             if alpha is not None :
                 c_ind = alpha*c_ind
             code[i_m, indice[1], indice[2], indice[3]] += c_ind
-            I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]+= -c_ind * X_conv[indice[1], :, :]
-            Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].reshape(-1)
+            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= -c_ind * X_conv[indice[1], :, :, :]
+            Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-(X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
             activation[indice[1]]+=1
+            how[indice[1]]+=c_ind
+            if when is not None :
+                when[indice[1],i_l0] += 1
             if train == True :
-                #residual_patch[indice[1],:,:,:] += c_ind*residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
-                residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1] += -c_ind * dico[indice[1], :, :, :]
-                residual_patch[indice[1],:,:,:] += residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
+                residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
+                where[indice[1],indice[2],indice[3]]+=1
     activation[activation==0]=1
     if train == True:
-        residual_patch = residual_patch/ activation[:,np.newaxis,np.newaxis,np.newaxis]
         res = torch.mean(torch.norm(torch.FloatTensor(residual_image).view(nb_image, -1),p=2,dim=1))
-        to_return = (residual_patch, res,activation)
+        to_return = (residual_image, code, res, activation, where, when, how)
     else :
         to_return = (code,activation)
     return to_return
 
-
-def ConvMP_np_PCA(image_input, dictionary, l0_sparseness=2,
-                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual',alpha=None):
-    nb_image = image_input.size()[0]
-    image_size = image_input.size()[2]
-    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
+def learn(code,dictionary,residual,eta):
     nb_dico = dictionary.size()[0]
-    padding = dico_shape[2] - 1
-    tic = time.time()
-    X_conv = conv(dictionary, dictionary, padding=padding)
-    I_conv = conv(image_input, dictionary)
-    I_conv_padded = padTensor(I_conv, padding=padding)
-    Conv_size = tuple(I_conv.size())
-    I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-    X_conv = X_conv.numpy()
-    I_conv_padded = I_conv_padded.numpy()
-    code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
-    activation = np.zeros(nb_dico)
-    dico = dictionary.numpy()
-    # Specific to PCA
-    vec_indice = np.zeros((nb_image*l0_sparseness))
-    vec_address = np.zeros((nb_image*l0_sparseness))
-    all_patches = np.zeros((nb_image*l0_sparseness,dico_shape[0],dico_shape[1],dico_shape[2]))
-    if train == True :
-        residual_patch = np.zeros((nb_dico,dico_shape[0],dico_shape[1],dico_shape[2]))
-        residual_image = image_input.clone().numpy()
-    idx=0
-    for i_m in range(nb_image):
-        Conv_one_image = I_conv_ravel[i_m,:]
-        for i_l0 in range(l0_sparseness):
-            m_ind = np.argmax(Conv_one_image,axis=0)
-            m_value = Conv_one_image[m_ind]
-            indice = np.unravel_index(m_ind, Conv_size)
-            c_ind = m_value/X_conv[indice[1],indice[1],dico_shape[1] - 1, dico_shape[2] - 1]
-            if alpha is not None :
-                c_ind = alpha*c_ind
-            code[i_m, indice[1], indice[2], indice[3]] += c_ind
-            vec_indice[idx]=c_ind
-            vec_address[idx]=indice[1]
-            I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]+= -c_ind * X_conv[indice[1], :, :]
-            Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].reshape(-1)
-            activation[indice[1]]+=1
-            all_patches[idx,:,:,:] = c_ind * dico[indice[1], :, :, :]
-            if train == True :
-                #residual_patch[indice[1],:,:,:] += c_ind*residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
-                all_patches[idx,:,:,:] = residual_image[i_m,:,indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
-                residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1] += -c_ind * dico[indice[1], :, :, :]
-                residual_patch[indice[1],:,:,:] += residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1]
-            idx += 1
-    activation[activation==0]=1
-    if train == True:
-        residual_patch = residual_patch/ activation[:,np.newaxis,np.newaxis,np.newaxis]
-        res = torch.mean(torch.norm(torch.FloatTensor(residual_image).view(nb_image, -1),p=2,dim=1))
-        to_return = (residual_patch, res,activation)
-    else :
-        to_return = (code,activation)
-    return vec_indice, vec_address, all_patches,res
+    dico_size = (dictionary.size()[1],dictionary.size()[2],dictionary.size()[3])
+    for idx_dico in range(nb_dico):
+        #print(code)
+        mask = code[:,idx_dico,:,:]>0
 
-
-class CHAMP_Layer_to:
-    def __init__(self, l0_sparseness=10, sigma=None, nb_dico=30, dico_size=(13, 13),
-                     verbose=0, doSym=False, FilterStyle='Gaussian', MaskMod='Residual'):
-
-        self.nb_dico = nb_dico
-        self.dico_size = dico_size
-        self.l0_sparseness = l0_sparseness
-        self.verbose = verbose
-        self.sigma = sigma
-        self.trained = False
-        self.type = 'Unsupervised'
-        self.doSym = doSym
-        self.FilterStyle = FilterStyle
-        self.MaskMod = MaskMod
-
-    def RunLayer(self, dataset, dictionary):
-        self.dictionary = dictionary
-        coding_list = list()
-        for i, (image) in enumerate(dataset[0]):
-            label = dataset[1][i]
-            return_fn = ConvMP_np(image, self.dictionary, l0_sparseness=self.l0_sparseness,
-                                    modulation=None, train=False, doSym=self.doSym)
-            code,residual_patch, res  = return_fn
-            coding_list.append((code, label))
-        return coding_list
-
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=0.01, nb_record=4,dico_init=None,seed=None):
-
-        self.nb_epoch = nb_epoch
-        self.eta = eta
-        self.eta_homeo = eta_homeo
-        if seed is not None :
-            np.random.seed(seed)
-        self.dictionary = np.random.rand(self.nb_dico, 1, self.dico_size[0], self.dico_size[1])
-        self.dictionary = Normalize(torch.FloatTensor(self.dictionary))
-        self.activation = torch.zeros(self.nb_dico)
-        self.res_list = list()
-        modulation = torch.ones(self.nb_dico)
-        tic = time.time()
-        first_epoch = 1
-        for i_epoch in range(self.nb_epoch):
-            for i, image in enumerate(data_set[0]):
-                return_fn = ConvMP_to(image, self.dictionary,
-                                l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
-                                doSym=self.doSym, mask=None)
-                code, residual_patch, res = return_fn
-                self.dictionary.add_(residual_patch.mul_(self.eta))
-                self.dictionary = Normalize(self.dictionary)
-                self.res_list.append(res)
-            if self.verbose != 0:
-                if ((i_epoch + 1) % (self.nb_epoch // self.verbose)) == 0:
-                    timing = time.time() - tic
-                    print('epoch {0} - {1} done in {2}m{3}s'.format(first_epoch,
-                                                                    i_epoch + 1, int(timing // 60), int(timing % 60)))
-                    tic, first_epoch = time.time(),  i_epoch + 1
-        return code
-
-def ConvMP_to(image_input, dictionary, l0_sparseness=2,
-                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual',GPU=False):
-    nb_image = image_input.size()[0]
-    image_size = image_input.size()[2]
-    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
-    nb_dico = dictionary.size()[0]
-    padding = dico_shape[2] - 1
-    X_conv = conv(dictionary, dictionary, padding=padding)
-    I_conv = conv(image_input, dictionary)
-    I_conv_padded = padTensor(I_conv, padding=padding)
-    Conv_size = tuple(I_conv.size())
-    Conv = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-    code = torch.zeros(nb_image, nb_dico, Conv_size[2], Conv_size[3])
-    residual_patch = torch.zeros(nb_dico, dico_shape[0], dico_shape[1], dico_shape[2])
-    nb_activation = torch.zeros(nb_dico)
-    residual_image = image_input.clone()
-    idx = 0
-    for i_m in range(nb_image):
-        Conv_one_image = Conv[i_m, :]
-        for i_l0 in range(l0_sparseness):
-            _, m_ind = torch.max(Conv_one_image, 0)
-            indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
-            m_value = Conv_one_image[m_ind]
-            c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[1] - 1, dico_shape[2] - 1]
-            code[int(i_m), int(indice[1]), int(indice[2]), int(indice[3])] += float(c_ind)
-            I_conv_padded[i_m, :, indice[2]:indice[2] + 2*padding + 1, indice[3]:indice[3] + 2*padding + 1]\
-                .add_(-c_ind * X_conv[indice[1], :, :])
-            Conv_one_image = I_conv_padded[i_m, :, padding:-padding, padding:-padding].contiguous().view(-1)
-            if train == True :
-                residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1].add_(-c_ind * dictionary[indice[1], 0, :, :])
-                residual_patch[indice[1], :, :, :].add_(
-                    residual_image[i_m, :, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1])
-                nb_activation[indice[1]] += 1
-            idx += 1
-    if train == True:
-        res = torch.mean(torch.norm(residual_image.view(
-            nb_image, image_size * image_size), p=2, dim=1))
-        mean = residual_patch / \
-            nb_activation.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(residual_patch)
-        residual_patch[mean == mean] = mean[mean == mean]
-    else : res=0
-    return code, residual_patch, res
-
-class CHAMP_Layer:
-    '''
-    Class defining a CHAMP Layer (A Layer of Convolutional Matching Pursuit)
-    Initialization parameters :
-        * nb_dico (int) : number of filters in the dictionary
-        * l0_sparseness (int) : number of activation per image
-        * dico_size (int,int) : height and widht of the filters in the dictionary
-        * sigma (float) : parameter to set the mask's gaussian volatility. If sigma is None, the masks are not applied
-        * verboe (int) : control the verbosity. Could be superior to 1 to monitor the training
-        * FilterStyle (string) : Define the type of mask to apply
-        * MaskMode (string) : Option to control where the mask are applied
-    '''
-
-    def __init__(self, l0_sparseness=10, sigma=None, nb_dico=30, dico_size=(13, 13),
-                 verbose=0, doSym=False, FilterStyle='Gaussian', MaskMod='Residual'):
-
-        self.nb_dico = nb_dico
-        self.dico_size = dico_size
-        self.l0_sparseness = l0_sparseness
-        self.verbose = verbose
-        self.sigma = sigma
-        self.trained = False
-        self.type = 'Unsupervised'
-        self.doSym = doSym
-        self.FilterStyle = FilterStyle
-        self.MaskMod = MaskMod
-        self.learning = learning
-
-    def RunLayer(self, dataset, dictionary):
-        self.dictionary = dictionary
-        coding_list = list()
-        for i, (image) in enumerate(dataset[0]):
-            label = dataset[1][i]
-            return_fn = self.CodingCHAMP(image, self.dictionary, l0_sparseness=self.l0_sparseness,
-                                    modulation=None, train=False, doSym=self.doSym)
-            code, res, nb_activation, residual_patch = return_fn
-            coding_list.append((code, label))
-        return coding_list
-
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=0.01, nb_record=5,dico_init=None):
-        self.nb_epoch = nb_epoch
-        self.eta = eta
-        self.eta_homeo = eta_homeo
-        self.dictionary = np.random.rand(self.nb_dico, 1, self.dico_size[0], self.dico_size[1])
-        self.dictionary = Normalize(Variable(torch.FloatTensor(self.dictionary)))
-        if self.sigma is not None:
-            mask = GenerateRound(self.dictionary, sigma=self.sigma, style=self.FilterStyle)
-        else:
-            mask = Variable(torch.ones(self.dictionary.size()))
-        #mask = GenerateRound(self.dictionary,sigma=0.8, style='Gaussian')
-        #self.dictionary = Normalize(self.dictionary*mask)
-
-        self.activation = torch.zeros(self.nb_dico)
-        self.res_list = list()
-        self.gradient = list()
-        modulation = torch.ones(self.nb_dico)
-        tic = time.time()
-        nb_applied_dico = 10
-        first_epoch = 1
-        for i_epoch in range(self.nb_epoch):
-            for i, image in enumerate(data_set[0]):
-                return_fn = self.CodingCHAMP(image, self.dictionary,
-                                l0_sparseness=self.l0_sparseness, modulation=modulation, train=True,
-                                doSym=self.doSym, sigma=self.sigma, style=self.FilterStyle)
-                code, res, nb_activation, residual_patch = return_fn
-                self.dictionary.data.add_(residual_patch.mul_(
-                    self.eta).view(self.dictionary.size()))
-                self.dictionary = Normalize(self.dictionary)
-                self.res_list.append(res)
-                self.activation += nb_activation
-                if eta_homeo is not None:
-                    modulation = self.UpdateModulation(
-                        modulation, self.activation, eta_homeo=self.eta_homeo)
-            if self.verbose != 0:
-                if ((i_epoch + 1) % (self.nb_epoch // self.verbose)) == 0:
-                    timing = time.time() - tic
-                    print('epoch {0} - {1} done in {2}m{3}s'.format(first_epoch,
-                                                                    i_epoch + 1, int(timing // 60), int(timing % 60)))
-                    tic, first_epoch = time.time(),  i_epoch + 1
-        self.dictionary = torch.mul(self.dictionary, mask)
-        self.trained = True
-        return self.dictionary
-
-    def UpdateModulation(self, Modulation, activation, eta_homeo):
-        target = torch.mean(activation)
-        tau = - (torch.max(activation) - target) / np.log(0.2)
-        modulation_function = torch.exp(
-            (1 - eta_homeo) * torch.log(Modulation) - eta_homeo * ((activation - target) / tau))
-        return modulation_function
-
-    def CodingCHAMP(self, image_input, dictionary, l0_sparseness=2,
-                    modulation=None, verbose=0, train=True, doSym=False, sigma=None, style='Gaussian'):
-        nb_image = image_input.size()[0]
-        image_size = image_input.size()[2]
-        dico_shape = tuple((dictionary.size()[2], dictionary.size()[3]))
-        nb_dico = dictionary.size()[0]
-        # Could be once for all to speed up
-        if sigma is not None and self.MaskMod == 'Residual':
-            mask = GenerateRound(dictionary, sigma=sigma, style=style)
-        else:
-            mask = Variable(torch.ones(dictionary.size()[2], dictionary.size()[3]))
-
-        padding = dico_shape[0] - 1
-        #dico_masked = torch.mul(dictionary, mask)
-        X_conv = conv2d(dictionary, dictionary, bias=None, padding=padding).data
-        # X_conv = conv2d(dico_masked,,bias=None,padding=padding).data
-        Conv0 = conv2d(image_input, dictionary, bias=None)
-        #Conv0 = conv2d(image_input, dico_masked, bias=None)
-        Conv_padded = pad(Conv0[:, :, :, :],
-                          pad=(padding, padding, padding, padding),
-                          mode='constant', value=0.)
-        Conv_size = tuple(Conv0.size())
-        Conv = Conv0.data.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-        Sparse_code_addr = torch.zeros(4, nb_image * l0_sparseness).long()
-        Sparse_code_coeff = torch.zeros(nb_image * l0_sparseness)
-
-        residual_image = image_input.data.clone()
-        residual_patch = torch.zeros(nb_dico, 1, dictionary.size()[2], dictionary.size()[3])
-        nb_activation = torch.zeros(nb_dico)
-        if modulation is None:
-            modulation = torch.ones(nb_dico)
-        Mod = modulation.unsqueeze(1).unsqueeze(2).expand_as(Conv0[0, :, :, :])
-        Mod = Mod.contiguous().view(Conv[0].size())
-        idx = 0
-        for i_m in range(nb_image):
-            Conv_one_image = Conv[i_m, :]
-            coeff_memory = torch.zeros(Conv_one_image.size())
-
-            for i_l0 in range(l0_sparseness):
-
-                ConvMod = Conv_one_image * Mod
-                if doSym == 'abs':
-                    _, m_ind = torch.max(torch.abs(ConvMod), 0)
-                elif doSym == 'pos':
-                    _, m_ind = torch.max(ConvMod * (ConvMod>0).type(torch.FloatTensor), 0) ## Attention, ne passe pas en GPU
-                else :
-                    _, m_ind = torch.max(ConvMod, 0)
-                #if doSym == True:
-                #    _, m_ind = torch.max(torch.abs(ConvMod), 0)
-                #else:
-                #    _, m_ind = torch.max(ConvMod * (ConvMod>0).type(torch.FloatTensor), 0)
-                indice = np.unravel_index(int(m_ind.numpy()), Conv_size)
-                m_value = Conv_one_image[m_ind]
-                c_ind = m_value / X_conv[indice[1], indice[1], dico_shape[0] - 1, dico_shape[1] - 1]
-                coeff_memory[m_ind] += c_ind
-                Sparse_code_addr[:, idx] = torch.LongTensor(
-                    [int(i_m), int(indice[1]), int(indice[2]), int(indice[3])])
-                Sparse_code_coeff[idx] = float(coeff_memory[m_ind].numpy())
-                Conv_padded[i_m, :, indice[2] + padding - padding:indice[2] + padding + padding + 1, indice[3] + padding - padding:indice[3] + padding + padding + 1].\
-                    data.add_(-c_ind * X_conv[indice[1], :, :])
-                Conv_int = Conv_padded[i_m, :, padding:-padding, padding:-padding].contiguous()
-                Conv_one_image = Conv_int.data.view(-1)
-
-
-
-                if train == True:
-                    residual_image[i_m, 0, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1].add_(-c_ind * dictionary[indice[1], 0, :, :].data)
-                    # if self.MaskMod == 'Residual':
-                    #    patch = residual_image[i_m,0,indice[2]:indice[2]+padding+1,indice[3]:indice[3]+padding+1].clone()
-                    #    residual_patch[indice[1],0,:,:] += (patch + c_ind*dictionary[indice[1],0,:,:].data)*mask.data[0,0,:,:] - c_ind*dictionary[indice[1],0,:,:].data
-                    # else :
-                    residual_patch[indice[1], 0, :, :].add_(
-                        residual_image[i_m, 0, indice[2]:indice[2] + padding + 1, indice[3]:indice[3] + padding + 1])
-                    nb_activation[indice[1]] += 1
-                idx += 1
-        if train == True:
-            res = torch.mean(torch.norm(residual_image.view(
-                nb_image, image_size * image_size), p=2, dim=1))
-            mean = residual_patch / \
-                nb_activation.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(residual_patch)
-            residual_patch[mean == mean] = mean[mean == mean]
-            if train == True:
-                residual_patch.mul_(mask.data[0, 0, :, :])
-        else:
-            res = 0
-        code = torch.sparse.FloatTensor(Sparse_code_addr, Sparse_code_coeff, torch.Size([
-                                        nb_image, nb_dico, Conv_size[2], Conv_size[3]]))
-        return code, res, nb_activation, residual_patch
-
-
-
-
-
-def ConvMP_V_numpy(image_input, dictionary, l0_sparseness=2,
-                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual'):
-    nb_image = image_input.size()[0]
-    image_size = image_input.size()[2]
-    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
-    nb_dico = dictionary.size()[0]
-    padding = dico_shape[2] - 1
-    X_conv = conv(dictionary, dictionary, padding=padding)
-    I_conv = conv(image_input, dictionary)
-    I_conv_padded = padTensor(I_conv, padding=padding)
-    Conv_size = tuple(I_conv.size())
-    I_conv_ravel = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-    I_conv_ravel = I_conv_ravel.numpy()
-    X_conv = X_conv.numpy()
-    I_conv_padded = I_conv_padded.numpy()
-    code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
-    for i_l0 in range(l0_sparseness):
-        m_ind = np.argmax(I_conv_ravel,axis=1)
-        m_value = I_conv_ravel[np.arange(nb_image),m_ind]
-        indice = np.unravel_index(m_ind, Conv_size)
-        c_ind = m_value/X_conv[indice[1],indice[1],dico_shape[1] - 1, dico_shape[2] - 1]
-        code[np.arange(nb_image),indice[1],indice[2],indice[3]] += c_ind
-        strides,shape = I_conv_padded.strides,I_conv_padded.shape
-
-        das = PatchExtractor(I_conv_padded,indice[2],indice[3],2*padding + 1)
-
-        das[(indice[2],indice[3], np.arange(nb_image))]+= -c_ind[:,np.newaxis,np.newaxis,np.newaxis]* X_conv[indice[1], :, :]
-
-        I_conv_padded = np.lib.stride_tricks.as_strided(das, shape,strides )
-        I_conv_ravel = I_conv_padded[:,:,padding:-padding, padding:-padding].reshape((-1, Conv_size[1] * Conv_size[2] * Conv_size[3]))
-
-    return code
+        loc_image,loc_line,loc_col = np.where(mask)
+        #print(loc_image,loc_line,loc_col)
+        if len(loc_image) != 0:
+            patches = np.zeros((len(loc_image),dico_size[0],dico_size[1],dico_size[2]))
+            act_c = code[:,idx_dico,:,:][mask]
+            #print(act_c)
+            for idx in range(len(loc_image)) :
+                patches[idx,:,:,:] = residual[loc_image[idx],:,loc_line[idx]:loc_line[idx]+dico_size[1],loc_col[idx]:loc_col[idx]+dico_size[2]]
+            to_add = np.mean(patches,axis = 0)
+            dictionary[idx_dico,:,:,:].add_(eta*torch.FloatTensor(to_add))
+    dictionary = Normalize(dictionary)
+    return dictionary, patches#,to_add
 '''
-def ConvMP_FAST(image_input, dictionary, l0_sparseness=2,
-                modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                MaskMod='Residual'):
-    nb_image = image_input.size()[0]
-    image_size = image_input.size()[2]
-    dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
+def learn2(code,dictionary,residual,eta):
     nb_dico = dictionary.size()[0]
-    padding = dico_shape[2] - 1
-    X_conv = conv(dictionary, dictionary, padding=padding)
-    print('X_conv',X_conv.size())
-    I_conv = conv(image_input, dictionary)
-    print('I_conv',I_conv.size())
-    I_conv_padded = padTensor(I_conv, padding=padding)
-    print('I_conv_padded',I_conv_padded.size())
-    Conv_size = tuple(I_conv.size())
-    I_conv_ravel = I_conv.view(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-    print('I_conv_ravel',I_conv_ravel.size())
-    for i_l0 in range(l0_sparseness):
-        m_value, m_ind = torch.max(I_conv_ravel, 1)
-        indice = np.unravel_index(m_ind, (2,24,24))#m_value = I_conv_ravel[:,m_ind]
-        indice = (torch.LongTensor(indice[0]),torch.LongTensor(indice[1]),torch.LongTensor(indice[2]))
-        #a = X_conv[indice[0],indice[0],dico_shape[1] - 1, dico_shape[2] - 1]
-        #print(a.size())
-    return m_ind, m_value,indice,X_conv
+    dico_size = (dictionary.size()[1],dictionary.size()[2],dictionary.size()[3])
+    for idx_dico in range(nb_dico):
+        #print(code)
+        mask = code[:,idx_dico,:,:]>0
+
+        loc_image,loc_line,loc_col = np.where(mask)
+        if len(loc_image) != 0:
+            patches = np.zeros((dico_size[0],dico_size[1],dico_size[2]))
+            act_c = code[:,idx_dico,:,:][mask]
+            for idx in range(len(loc_image)) :
+                patches[:,:,:] += residual[loc_image[idx],:,loc_line[idx]:loc_line[idx]+dico_size[1],loc_col[idx]:loc_col[idx]+dico_size[2]]
+                #to_add = np.mean(patches,axis = 0)
+            patches[:,:,:]/
+            #to_add = patches/len(loc_image)
+            dictionary[idx_dico,:,:,:].add_(eta*torch.FloatTensor(to_add))
+    dictionary = Normalize(dictionary)
+    return dictionary
 '''
