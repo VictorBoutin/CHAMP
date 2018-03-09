@@ -9,7 +9,7 @@ from CHAMP.LowLevel import PatchExtractor, RotateDico90
 from CHAMP.Monitor import DisplayDico
 class CHAMP_Layer_np:
     def __init__(self, l0_sparseness=10, nb_dico=30, dico_size=(13, 13),
-                     verbose=0, doSym=False, alpha=None, mask=None,stride=1):
+                     verbose=0, doSym=False, alpha=None, mask=None,stride=1, do_mask=False):
 
         self.nb_dico = nb_dico
         self.dico_size = dico_size
@@ -21,6 +21,7 @@ class CHAMP_Layer_np:
         self.mask = mask
         self.alpha = alpha
         self.stride = stride
+        self.do_mask = do_mask
 
     def RunLayer(self, dataset, dictionary=None):
         if dictionary is not None :
@@ -70,7 +71,7 @@ class CHAMP_Layer_np:
                                 l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
                                 doSym=self.doSym, mask=self.mask, alpha=self.alpha,stride=self.stride,when=when)
                 self.residual_image, self.code, res, nb_activation,self.where,self.when,self.how = return_fn
-                dictionary,self.patches = learn(self.code, self.dictionary, self.residual_image,self.eta)
+                dictionary,self.patches = learn(self.code, self.dictionary, self.residual_image,self.eta, do_mask=self.do_mask)
                 #dictionary = learn2(self.code, self.dictionary, self.residual_image,self.eta)
                 self.dictionary = torch.FloatTensor(dictionary)
                 self.dictionary = Normalize(self.dictionary)
@@ -156,23 +157,35 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
         to_return = (code,activation)
     return to_return
 
-def learn(code,dictionary,residual,eta):
+def learn(code,dictionary,residual,eta, do_mask=False):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1],dictionary.size()[2],dictionary.size()[3])
+    if do_mask:
+        x, y = np.meshgrid(np.linspace(-1, 1, dico_size[1], endpoint=True), np.linspace(-1, 1, dico_size[2], endpoint=True))
+        gradient_mask = np.exp( - (x ** 2 + y ** 2) /2. / .7**2 )
+
     for idx_dico in range(nb_dico):
         #print(code)
         mask = code[:,idx_dico,:,:]>0
 
-        loc_image,loc_line,loc_col = np.where(mask)
+        loc_image, loc_line, loc_col = np.where(mask)
         #print(loc_image,loc_line,loc_col)
-        if len(loc_image) != 0:
-            patches = np.zeros((len(loc_image),dico_size[0],dico_size[1],dico_size[2]))
-            act_c = code[:,idx_dico,:,:][mask]
+        if len(loc_image) > 0:
+            patches = np.zeros((len(loc_image), dico_size[0], dico_size[1], dico_size[2]))
+            act_c = code[:, idx_dico, :, :][mask]
             #print(act_c)
             for idx in range(len(loc_image)) :
-                patches[idx,:,:,:] = residual[loc_image[idx],:,loc_line[idx]:loc_line[idx]+dico_size[1],loc_col[idx]:loc_col[idx]+dico_size[2]]
-            to_add = np.mean(patches,axis = 0)
-            dictionary[idx_dico,:,:,:].add_(eta*torch.FloatTensor(to_add))
+                patches[idx,:,:,:] = act_c[idx] * residual[loc_image[idx], :,
+                                    loc_line[idx]:loc_line[idx]+dico_size[1],
+                                    loc_col[idx]:loc_col[idx]+dico_size[2]]
+            gradient = np.sum(patches, axis = 0)
+            gradient -= gradient.mean()
+            if do_mask: gradient *= gradient_mask
+            gradient = torch.FloatTensor(gradient)
+            gradient = Normalize(gradient.unsqueeze(0))[0,:,:,:]
+
+            dictionary[idx_dico,:,:,:].add_(eta*gradient)
+
     dictionary = Normalize(dictionary)
     return dictionary, patches#,to_add
 '''
