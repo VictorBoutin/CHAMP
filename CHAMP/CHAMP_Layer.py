@@ -595,20 +595,32 @@ def sso1(vector,threshold = 0.1):
 def learn(code,dictionary,residual,eta):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1],dictionary.size()[2],dictionary.size()[3])
+    if do_mask:
+        x, y = np.meshgrid(np.linspace(-1, 1, dico_size[1], endpoint=True), np.linspace(-1, 1, dico_size[2], endpoint=True))
+        gradient_mask = np.exp( - (x ** 2 + y ** 2) /2. / .7**2 )
+
     for idx_dico in range(nb_dico):
         #print(code)
         mask = code[:,idx_dico,:,:]>0
 
-        loc_image,loc_line,loc_col = np.where(mask)
+        loc_image, loc_line, loc_col = np.where(mask)
         #print(loc_image,loc_line,loc_col)
-        if len(loc_image) != 0:
-            patches = np.zeros((len(loc_image),dico_size[0],dico_size[1],dico_size[2]))
-            act_c = code[:,idx_dico,:,:][mask]
+        if len(loc_image) > 0:
+            patches = np.zeros((len(loc_image), dico_size[0], dico_size[1], dico_size[2]))
+            act_c = code[:, idx_dico, :, :][mask]
             #print(act_c)
             for idx in range(len(loc_image)) :
-                patches[idx,:,:,:] = residual[loc_image[idx],:,loc_line[idx]:loc_line[idx]+dico_size[1],loc_col[idx]:loc_col[idx]+dico_size[2]]
-            to_add = np.mean(patches,axis = 0)
-            dictionary[idx_dico,:,:,:].add_(eta*torch.FloatTensor(to_add))
+                patches[idx,:,:,:] = act_c[idx] * residual[loc_image[idx], :,
+                                    loc_line[idx]:loc_line[idx]+dico_size[1],
+                                    loc_col[idx]:loc_col[idx]+dico_size[2]]
+            gradient = np.sum(patches, axis = 0)
+            gradient -= gradient.mean()
+            if do_mask: gradient *= gradient_mask
+            gradient = torch.FloatTensor(gradient)
+            gradient = Normalize(gradient.unsqueeze(0))[0,:,:,:]
+
+            dictionary[idx_dico,:,:,:].add_(eta*gradient)
+
     dictionary = Normalize(dictionary)
     return dictionary#, patches#,to_add
 
