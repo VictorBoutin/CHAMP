@@ -67,7 +67,7 @@ def padTensor(data, padding,mode='constant',value=0):
                       mode=mode, value=value)
     return output.data
 
-def Normalize(to_normalize):
+def Normalize(to_normalize,order=2):
     '''
     L2 Normalize the 3 last dimensions of a tensor.
     INPUT :
@@ -76,8 +76,26 @@ def Normalize(to_normalize):
         * dico <torch.tensor(nb_image, nb_polarities, w, h)> : normalized version of data
     '''
     size = tuple(to_normalize.size())
+    #reshaped = to_normalize.view(size[0]*size[1], size[2]*size[3])
     reshaped = to_normalize.view(size[0], size[1]*size[2]*size[3])
-    norm = torch.norm(reshaped, p=2, dim=1)
+    norm = torch.norm(reshaped, p=order, dim=1)
+    norm_int = norm.unsqueeze(1).expand_as(reshaped)
+    dico = reshaped.div(norm_int).view(size)
+    return dico
+
+
+def Normalize_last2(to_normalize,order=2):
+    '''
+    L2 Normalize the 3 last dimensions of a tensor.
+    INPUT :
+        * data <torch.tensor(nb_image, nb_polarities, w, h)> : input image in a tensor format
+    OUTPUT :
+        * dico <torch.tensor(nb_image, nb_polarities, w, h)> : normalized version of data
+    '''
+    size = tuple(to_normalize.size())
+    reshaped = to_normalize.view(size[0]*size[1], size[2]*size[3])
+    #reshaped = to_normalize.view(size[0], size[1]*size[2]*size[3])
+    norm = torch.norm(reshaped, p=order, dim=1)
     norm_int = norm.unsqueeze(1).expand_as(reshaped)
     dico = reshaped.div(norm_int).view(size)
     return dico

@@ -48,14 +48,14 @@ def GenerateGabor(nb_dico, dico_size,sigma=1,lambd=5,gamma=0.5,psi=0,GPU=False):
 
 
 
-def Rebuilt(code,dico_in,idx=None):
+def Rebuilt(code,dico_in,idx=None,groups=1,stride=1):
     dico = dico_in.clone()
     if idx is not None :
         dico[idx,:,:,:]=0
     dico = dico.permute(1,0,2,3)
     dico_rotated = RotateDico90(dico)
     padding = dico.size()[-1]-1
-    output = conv(code,dico_rotated,padding=padding)
+    output = conv(code,dico_rotated,padding=padding,groups=groups,stride=stride)
     return output
 
 def GenerateMask(full_size, sigma=0.8, style='Gaussian',start_R=10):
