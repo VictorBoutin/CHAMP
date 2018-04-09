@@ -1,5 +1,5 @@
 from CHAMP.DataTools import GenerateMask
-from CHAMP.LowLevel import conv, Normalize, padTensor, unravel_index
+from CHAMP.LowLevel import conv, Normalize, padTensor, unravel_index, realconv
 from torch.nn.functional import conv2d, pad
 import torch
 import numpy as np
@@ -40,7 +40,7 @@ class CHAMP_Layer_np:
         return (torch.FloatTensor(code),dataset[1])
 
 
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,dico_init=None,seed=None,mode='Hebbian'):
+    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,dico_init=None,seed=None,mode='Hebbian',thr=0.1):
         self.nb_epoch = nb_epoch
         self.eta = eta
         self.eta_homeo = eta_homeo
@@ -82,7 +82,7 @@ class CHAMP_Layer_np:
                 elif self.algo == 'ConvCOD' :
                     return_fn = ConvCoD(batch, self.dictionary,
                                     l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
-                                    doSym=self.doSym, mask=self.mask, alpha=self.alpha,stride=self.stride,when=when,MatchingType=self.MatchingType)
+                                    doSym=self.doSym, mask=self.mask, alpha=self.alpha,stride=self.stride,when=when,MatchingType=self.MatchingType,thr=thr)
 
                 #return_fn = ConvMP_np2(batch, self.dictionary,
                 #                l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
@@ -129,6 +129,7 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
     #print(X_conv.size())
     X_conv_size = X_conv.size()[-2:]
     I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
+    #print(I_conv.numpy())
     I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
     Conv_size = tuple(I_conv.size())
     I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
@@ -150,6 +151,7 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
     for i_m in range(nb_image):
         Conv_one_image = I_conv_ravel[i_m,:]
         for i_l0 in range(l0_sparseness):
+            #print('1 : original convolution : \n',Conv_one_image.reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
             if modulation is None :
                 Conv_Mod = Conv_one_image
             else :
@@ -158,9 +160,12 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
                 m_ind = np.argmax(Conv_Mod,axis=0)
             elif MatchingType == 'abs':
                 m_ind = np.argmax(np.abs(Conv_Mod),axis=0)
+
             #m_ind = np.argmax(Conv_one_image,axis=0)
             m_value = Conv_one_image[m_ind]
+            #print('2 : maximum value : \n',m_value)
             indice = np.unravel_index(m_ind, Conv_size)
+            #print('3 : location of the maximum value : \n',indice)
             c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
             if alpha is not None :
                 c_ind = alpha*c_ind
@@ -177,7 +182,8 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
                 residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
                 where[indice[1],indice[2],indice[3]]+=1
             how[indice[1]]+=c_ind
-
+            #print('code \n',code)
+        #print('NEW_IMAGE : ', i_m, '\n \n')
     activation[activation==0]=1
     if train == True:
         res = torch.mean(torch.norm(torch.FloatTensor(residual_image).view(nb_image, -1),p=2,dim=1))
@@ -495,7 +501,8 @@ def EnergicConvMP_np(image_input, dictionary, l0_sparseness=2,
 
 def ConvCoD(image_input, dictionary, l0_sparseness=2,
                 modulation=None, verbose=0, train=True, doSym='pos', mask=None,\
-                alpha=None,stride=1,when=None,thr=0.1,MatchingType='Normal'):
+                alpha=None,stride=1,when=None,thr=0.1,MatchingType='Normal',criterium=0.1):
+    #print('soft threshold parameter',thr)
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1],dictionary.size()[2], dictionary.size()[3]))
@@ -504,17 +511,22 @@ def ConvCoD(image_input, dictionary, l0_sparseness=2,
     tic = time.time()
     if mask is None :
         mask = np.ones(dictionary.size())
+    #X_conv = realconv(dictionary,torch.transpose(dictionary,dim0=2,dim1=3), padding=padding,stride=stride)
+    #X_conv = realconv(torch.transpose(dictionary,dim0=2,dim1=3), dictionary, padding=padding,stride=stride)
     #X_conv = conv(torch.transpose(dictionary,dim0=2,dim1=3),dictionary, padding=padding,stride=stride)
     X_conv = conv(dictionary, dictionary, padding=padding,stride=stride)
-    #print('size of the cross correlation',X_conv.size())
+    #X_conv = conv(torch.transpose(dictionary,dim0=2,dim1=3),dictionary, padding=padding,stride=stride)
+    #X_conv = conv(dictionary, torch.transpose(dictionary,dim0=2,dim1=3), padding=padding,stride=stride)
     X_conv_size = X_conv.size()[-2:]
+    #I_conv = realconv(image_input, torch.transpose(dictionary,dim0=2,dim1=3)*torch.FloatTensor(mask),stride=stride)
     #I_conv = conv(image_input, torch.transpose(dictionary,dim0=2,dim1=3)*torch.FloatTensor(mask),stride=stride)
     I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
+    #I_conv = conv(image_input, torch.transpose(dictionary,dim0=2,dim1=3)*torch.FloatTensor(mask),stride=stride)
+
+    #I_conv = realconv(image_input, torch.transpose(dictionary,dim0=2,dim1=3)*torch.FloatTensor(mask),stride=stride)
     I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
-    #print(X_conv_size[0]//2)
     Conv_size = tuple(I_conv.size())
-    #print('size of the convolution',Conv_size)
-    #print('size of the padded convolution',I_conv_padded.size())
+    print('ConvSize',I_conv_padded.size())
     I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
     X_conv = X_conv.numpy()
     I_conv_padded = I_conv_padded.numpy()
@@ -533,42 +545,64 @@ def ConvCoD(image_input, dictionary, l0_sparseness=2,
         old_z = np.zeros_like(Conv_one_image)
         #m_value = 100
         #z_b = np.zeros_like(Conv_one_image)
-        for i_l0 in range(l0_sparseness):
-
+        #for i_l0 in range(l0_sparseness):
+        change = 1
+        while change > criterium:
+            #print(old_z.reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
             #print('1 : original convolution : \n',Conv_one_image.reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
-            z_b = sso1(Conv_one_image,thr)
+            z_b = sso2(Conv_one_image,thr)
             #print('2 : soft treshold conv: \n',z_b.reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
             #print('3 : difference abs(old_z-z_b) \n',np.abs(old_z-z_b).reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
             m_ind = np.argmax(np.abs(old_z-z_b),axis=0)
-            m_value = Conv_one_image[m_ind]
+            m_value = Conv_one_image[m_ind].copy()
             #print('4 : max value of original convolution \n',m_value)
 
             indice = np.unravel_index(m_ind, Conv_size)
+
+            #print(indice)
             #print('5 : index of the max value \n',indice)
 
-            c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
-            #print(X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2])
+            #c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
+            #c_ind = m_value
+            #print('cross_convolution',X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2])
 
+            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]] -= np.abs(old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1], :, :, :]
+            #I_conv_padded[i_m, indice[1], indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]] += (old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1],indice[1], :, :]
+            #I_conv_padded[i_m, indice[1], indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]-= (old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1],indice[1], :, :]
+            #I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= (z_b[m_ind]-old_z[m_ind]) * X_conv[indice[1],:, :, :]
+            #I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= (old_z[m_ind]-z_b[m_ind]) * X_conv[:,indice[1] , :, :]
+            #I_conv_padded[i_m, indice[1], indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= (old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1],indice[1] , :, :]
+            #I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= (old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1],:, :, :]
+            #I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]-= np.abs(old_z[m_ind]-z_b[m_ind]) * X_conv[:,indice[1] , :, :]
+            #print('6 : corrective coefficient \n',np.abs(old_z[m_ind]-z_b[m_ind]))
 
-            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= (old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1], :, :, :]
-
-            #print('6 : corrective coefficient \n',old_z[m_ind]-z_b[m_ind])
-
+            #I_conv_padded[i_m,indice[1],indice[2]+X_conv_size[0]//2,indice[3]+X_conv_size[0]//2] -= (old_z[m_ind]-z_b[m_ind]) * X_conv[indice[1],indice[1], X_conv_size[0]//2, X_conv_size[1]//2]
             I_conv_padded[i_m,indice[1],indice[2]+X_conv_size[0]//2,indice[3]+X_conv_size[0]//2] = m_value
-
             Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-(X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
-            #print('7 : corrected convolution \n',Conv_one_image.reshape(Conv_size[1],Conv_size[2],Conv_size[3]) )
-            code[i_m, indice[1], indice[2], indice[3]] += c_ind
-            print('change :', old_z[m_ind]-z_b[m_ind])
-            old_z = z_b.copy()
-            activation[indice[1]]+=1
-            how[indice[1]]+=c_ind
 
-            if when is not None :
-                when[indice[1],i_l0] += 1
-            if train == True :
-                residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
-                where[indice[1],indice[2],indice[3]]+=1
+            #print('7 : corrected convolution \n',Conv_one_image.reshape(Conv_size[1],Conv_size[2],Conv_size[3]) )
+            #code[i_m, indice[1], indice[2], indice[3]] += z_b[m_ind]
+            #print(change)
+            change = np.abs(old_z[m_ind]-z_b[m_ind])
+            print(change)
+            #print('change :', np.abs(old_z[m_ind]-z_b[m_ind]))
+            old_z[m_ind] = z_b[m_ind].copy()
+            activation[indice[1]]+=1
+
+            #print('code',sso2(Conv_one_image,thr).reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
+            #how[indice[1]]+=c_ind
+
+            #if when is not None :
+            #    when[indice[1],i_l0] += 1
+            #if train == True :
+            #    residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
+            #    where[indice[1],indice[2],indice[3]]+=1
+
+        co = sso2(Conv_one_image,thr)
+        #print(co.reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
+        #if i_m==0 :
+        #    print(co.reshape(Conv_size[1],Conv_size[2],Conv_size[3]))
+        code[i_m,:,:,:]=co.reshape(Conv_size[1],Conv_size[2],Conv_size[3])
         print('NEW_IMAGE : ', i_m, '\n \n')
             #print('m_value after',m_value)
     activation[activation==0]=1
@@ -592,6 +626,12 @@ def sso1(vector,threshold = 0.1):
     out[mask_positive]-=threshold
     out[mask_negative]+=threshold
     return out
+def sso2(vector,thr=2):
+    out = vector.copy()
+    a = np.abs(out)-thr
+    a[a<=0]=0
+    te = a*np.sign(out)
+    return te
 def learn(code,dictionary,residual,eta):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1],dictionary.size()[2],dictionary.size()[3])
