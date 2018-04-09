@@ -2,49 +2,54 @@ import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
 
+
 def DisplayDico(dico):
-    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
-    try :
-        if dico.type() in ['torch.FloatTensor','torch.LongTensor']:
+    subplotpars = matplotlib.figure.SubplotParams(
+        left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
+    try:
+        if dico.type() in ['torch.FloatTensor', 'torch.LongTensor']:
             dico = dico.numpy()
-    except :
+    except:
         pass
     dico_size = tuple(dico.shape[2:])
     nb_dico = dico.shape[0]
     nb_channel = dico.shape[1]
     if nb_channel != 1:
         raise NameError('Do Not Support Multi Channel Plot')
-    out_dico = dico.reshape(-1,dico_size[0],dico_size[1])
-    fig = plt.figure(figsize=(10,(nb_dico//10+1)), subplotpars=subplotpars)
+    out_dico = dico.reshape(-1, dico_size[0], dico_size[1])
+    fig = plt.figure(figsize=(10, (nb_dico//10+1)), subplotpars=subplotpars)
     for i, each_filter in enumerate(out_dico):
-        #print(each_filter.shape)
+        # print(each_filter.shape)
         #each_filter /= np.abs(each_filter).max()
         #cmax = np   .max(each_filter)
         #cmin = np.min(each_filter)
-        ax = fig.add_subplot(nb_dico//10+1,10,i+1)
+        ax = fig.add_subplot(nb_dico//10+1, 10, i+1)
         cmax = np.abs(each_filter.max())
         ax.imshow(each_filter, cmap='gray', vmin=-cmax, vmax=cmax)
         ax.set_xticks(())
         ax.set_yticks(())
 
+
 def DisplayWhere(where):
-    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
-    try :
-        if where.type() in ['torch.FloatTensor','torch.LongTensor']:
+    subplotpars = matplotlib.figure.SubplotParams(
+        left=0., right=1., bottom=0., top=1., wspace=0.05, hspace=0.05)
+    try:
+        if where.type() in ['torch.FloatTensor', 'torch.LongTensor']:
             dico = where.numpy()
-    except :
+    except:
         pass
     where_size = tuple(where.shape[-2:])
     nb_map = where.shape[0]
-    fig = plt.figure(figsize=(10,(nb_map//10+1)), subplotpars=subplotpars)
+    fig = plt.figure(figsize=(10, (nb_map//10+1)), subplotpars=subplotpars)
     for i in range(nb_map):
-        ax = fig.add_subplot(nb_map//10+1,10,i+1)
-        cmax = np.abs(where[i,:,:].max())
-        ax.imshow(where[i,:,:], vmin=0, vmax=cmax)
+        ax = fig.add_subplot(nb_map//10+1, 10, i+1)
+        cmax = np.abs(where[i, :, :].max())
+        ax.imshow(where[i, :, :], vmin=0, vmax=cmax)
         ax.set_xticks(())
         ax.set_yticks(())
 
-def DisplayConvergenceCHAMP(ClusterLayer,to_display=['error'],eta=None,eta_homeo=None):
+
+def DisplayConvergenceCHAMP(ClusterLayer, to_display=['error'], eta=None, eta_homeo=None):
     '''
     Function to display the monitored variable during the training
     INPUT :
@@ -56,70 +61,76 @@ def DisplayConvergenceCHAMP(ClusterLayer,to_display=['error'],eta=None,eta_homeo
     '''
     if type(ClusterLayer) is not list:
         ClusterLayer = [ClusterLayer]
-    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
-    fig = plt.figure(figsize=(10,2*len(ClusterLayer)),subplotpars=subplotpars)
+    subplotpars = matplotlib.figure.SubplotParams(
+        left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
+    fig = plt.figure(figsize=(10, 2*len(ClusterLayer)), subplotpars=subplotpars)
     location = 1
 
-    for idx,each_Layer in enumerate(ClusterLayer) :
+    for idx, each_Layer in enumerate(ClusterLayer):
         nb_dico = each_Layer.nb_dico
         for idx_type, each_type in enumerate(to_display):
             each_type = str(each_type)
-            ax = fig.add_subplot(len(ClusterLayer),len(to_display),location)
+            ax = fig.add_subplot(len(ClusterLayer), len(to_display), location)
             #max_x = each_Layer.record[each_type].shape[0]*each_Layer.record_each
-            #ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
-            if each_type=='error':
+            # ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
+            if each_type == 'error':
                 to_plot = plt.plot(each_Layer.res_list)
-                if (eta is not None) and (eta_homeo is not None) :
-                    ax.set_title('Convergence Layer {0} with eta : {1} and eta_homeo : {2}'.format(idx+1,eta,eta_homeo),fontsize= 8)
-                else :
-                    ax.set_title('Convergence Layer {0}'.format(idx+1),fontsize= 8)
-            elif each_type=='histo':
+                if (eta is not None) and (eta_homeo is not None):
+                    ax.set_title('Convergence Layer {0} with eta : {1} and eta_homeo : {2}'.format(
+                        idx+1, eta, eta_homeo), fontsize=8)
+                else:
+                    ax.set_title('Convergence Layer {0}'.format(idx+1), fontsize=8)
+            elif each_type == 'histo':
 
-                to_plot = plt.bar(np.arange(nb_dico),each_Layer.activation,\
-                width=np.diff(np.arange(nb_dico+1)), ec="k", align="edge")
-                if (eta is not None) and (eta_homeo is not None) :
-                    ax.set_title('Histogram of activation at Layer {0} with eta : {1} and eta_homeo : {2}'.format(idx+1,eta,eta_homeo),fontsize= 8)
-                else :
-                    ax.set_title('Histogram of activation at Layer {0}'.format(idx+1),fontsize= 8)
-            location +=1
+                to_plot = plt.bar(np.arange(nb_dico), each_Layer.activation,
+                                  width=np.diff(np.arange(nb_dico+1)), ec="k", align="edge")
+                if (eta is not None) and (eta_homeo is not None):
+                    ax.set_title('Histogram of activation at Layer {0} with eta : {1} and eta_homeo : {2}'.format(
+                        idx+1, eta, eta_homeo), fontsize=8)
+                else:
+                    ax.set_title('Histogram of activation at Layer {0}'.format(idx+1), fontsize=8)
+            location += 1
 
-def DisplayConvergenceClassif(ClusterLayer,to_display=['error']):
-    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
-    fig = plt.figure(figsize=(10,2),subplotpars=subplotpars)
+
+def DisplayConvergenceClassif(ClusterLayer, to_display=['error']):
+    subplotpars = matplotlib.figure.SubplotParams(
+        left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
+    fig = plt.figure(figsize=(10, 2), subplotpars=subplotpars)
     location = 1
     for idx_type, each_type in enumerate(to_display):
         each_type = str(each_type)
-        ax = fig.add_subplot(1,len(to_display),location)
+        ax = fig.add_subplot(1, len(to_display), location)
         #max_x = each_Layer.record[each_type].shape[0]*each_Layer.record_each
-        #ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
-        if each_type=='error':
+        # ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
+        if each_type == 'error':
             to_plot = plt.plot(ClusterLayer.loss_list)
-            ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
-        if each_type=='accu':
+            ax.set_title('Classification Layer : {0}'.format(each_type), fontsize=8)
+        if each_type == 'accu':
             to_plot = plt.plot(ClusterLayer.accuracy_list)
-            ax.set_title('Classification Layer : {0}'.format(each_type),fontsize= 8)
+            ax.set_title('Classification Layer : {0}'.format(each_type), fontsize=8)
+
+        location += 1
 
 
-        location +=1
-
-def DisplayCV(ClusterLayer,to_display=['error'],title=None):
-    subplotpars = matplotlib.figure.SubplotParams(left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
-    fig = plt.figure(figsize=(10,2),subplotpars=subplotpars)
+def DisplayCV(ClusterLayer, to_display=['error'], title=None):
+    subplotpars = matplotlib.figure.SubplotParams(
+        left=0., right=1., bottom=0., top=1., wspace=0.1, hspace=0.2)
+    fig = plt.figure(figsize=(10, 2), subplotpars=subplotpars)
     location = 1
     if title is not None:
         title = title
-    else: title == ''
+    else:
+        title == ''
     for idx_type, each_type in enumerate(to_display):
         each_type = str(each_type)
-        ax = fig.add_subplot(1,len(to_display),location)
+        ax = fig.add_subplot(1, len(to_display), location)
         #max_x = each_Layer.record[each_type].shape[0]*each_Layer.record_each
-        #ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
-        if each_type=='error':
+        # ax.set_xticks([0,roundup(max_x/3,each_Layer.record_each),roundup(2*max_x/3,each_Layer.record_each)])
+        if each_type == 'error':
             to_plot = plt.plot(ClusterLayer[0])
-            ax.set_title( str(title)+ ' Classification Layer : {0}'.format(each_type),fontsize= 8)
-        if each_type=='accu':
+            ax.set_title(str(title) + ' Classification Layer : {0}'.format(each_type), fontsize=8)
+        if each_type == 'accu':
             to_plot = plt.plot(ClusterLayer[1])
-            ax.set_title( str(title)+ ' Classification Layer : {0}'.format(each_type),fontsize= 8)
+            ax.set_title(str(title) + ' Classification Layer : {0}'.format(each_type), fontsize=8)
 
-
-        location +=1
+        location += 1
