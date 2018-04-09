@@ -28,6 +28,13 @@ def conv(data, filters, padding=0,GPU=False,groups=1,stride=1):
     output = conv2d(data,filters,padding=padding,bias=None,groups=groups,stride=stride)
     return output.data
 
+def realconv(data, filters, padding=0,GPU=False,groups=1,stride=1):
+    filt = filters.clone()
+    filt = RotateDico90(filt,2)
+    filt, data = Variable(filt), Variable(data)
+    output = conv2d(data,filt,padding=padding,bias=None,groups=groups,stride=stride)
+    return output.data
+
 def conv_valid(data, filters, padding=0,GPU=False,groups=1):
     '''
     Convolution fonction on tensor.
