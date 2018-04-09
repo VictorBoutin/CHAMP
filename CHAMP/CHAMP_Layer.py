@@ -10,9 +10,9 @@ from CHAMP.Monitor import DisplayDico
 from scipy.sparse.linalg import svds
 
 
-class CHAMP_Layer_np:
+class CHAMP_Layer:
     def __init__(self, l0_sparseness=10, nb_dico=30, dico_size=(13, 13),
-                 verbose=0, doSym=False, alpha=None, mask=None, stride=1, MatchingType='all', algo='classic'):
+                 verbose=0, doSym=False, alpha=None, mask=None, stride=1, MatchingType='all', algo='MP'):
 
         self.nb_dico = nb_dico
         self.dico_size = dico_size

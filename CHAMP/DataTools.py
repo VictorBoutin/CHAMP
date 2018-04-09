@@ -5,6 +5,7 @@ import pickle
 import cv2
 import math
 from CHAMP.LowLevel import conv, Normalize, padTensor, RotateDico90
+import numpy as np
 
 
 def ContrastNormalized(data, avg_size=(5, 5), GPU=False):
@@ -23,6 +24,23 @@ def ContrastNormalized(data, avg_size=(5, 5), GPU=False):
         convol = conv(padded_tensor, to_conv)
         output_tensor[idx_batch, :, :, :, :] = each_batch - convol
     return output_tensor, data[1]
+
+def LocalContrastNormalization(training_set,sigma=0.5,filter_size=(9,9)):
+    data = training_set[0].numpy()
+    output = np.zeros_like(data)
+    gaussian_window = GenerateMask((1,data.shape[2],filter_size[0],filter_size[1]),sigma=sigma).contiguous()
+    gaussian_window /= torch.sum(gaussian_window.view(-1,data.shape[2]*filter_size[0]*filter_size[1]),dim=1)
+    for i in range(data.shape[0]):
+        data_padded = padTensor(training_set[0][i],filter_size[0]//2,mode='reflect')
+        te = conv(data_padded,gaussian_window)
+        output[i] = data[i,:,:,:,:]-conv(data_padded,gaussian_window)
+        data_padded = padTensor(torch.FloatTensor(output[i]),filter_size[0]//2,mode='reflect')
+        sig = torch.pow(conv(torch.pow(data_padded,2),gaussian_window),1/2)
+        mean_sig = torch.mean(sig.view(-1,sig.size()[1]*sig.size()[2]*sig.size()[3]),dim=1)
+        mean_sig = mean_sig.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(sig)
+        normalized_coeff = torch.max(mean_sig,sig)
+        output[i]/=normalized_coeff
+    return (torch.FloatTensor(output),training_set[1]),te,normalized_coeff,gaussian_window
 
 
 def GenerateGabor(nb_dico, dico_size, sigma=1, lambd=5, gamma=0.5, psi=0, GPU=False):
