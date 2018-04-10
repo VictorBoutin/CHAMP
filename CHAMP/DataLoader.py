@@ -1,7 +1,7 @@
 import torch
 from PIL import Image
 from random import shuffle
-from os import listdir
+import os
 import numpy as np
 import torchvision
 import torchvision.transforms as transforms
@@ -89,10 +89,10 @@ def LoadFaceDB(path, size=(68, 68), to_shuffle=True):
     tensor_image = torch.FloatTensor(1, batch_size, 1, size[0], size[1])
     tensor_label = torch.LongTensor(1, batch_size)
     label = 0
-    for each_dir in listdir(path):
+    for each_dir in os.listdir(path):
         if each_dir != '.DS_Store':
-            for each_file in listdir(path+str(each_dir)):
-                tot_dir = str(path)+str(each_dir)+'/'+str(each_file)
+            for each_file in os.listdir(os.path.join(path, str(each_dir))):
+                tot_dir = os.path.join(str(path), str(each_dir), str(each_file))
                 file_list.append((tot_dir, label))
             label += 1
     if to_shuffle == True:
@@ -116,16 +116,16 @@ def LoadCaltech101(path, size=(100, 100), to_shuffle=True, test_per_category=5, 
     #testing_data = torch.FloatTensor(1,nb_training,1,size[0],size[1])
     #testing_label = torch.FloatTensor(1,nb_training,1,size[0],size[1])
     if item is None:
-        all_dir = listdir(path)
+        all_dir = os.listdir(path)
     else:
         all_dir = item
     label = 0
     for each_dir in all_dir:
         if each_dir != '.DS_Store':
-            for each_file in listdir(path+str(each_dir))[0:-test_per_category]:
+            for each_file in os.listdir(os.path.join(path, str(each_dir)))[0:-test_per_category]:
                 tot_dir = str(path)+str(each_dir)+'/'+str(each_file)
                 file_list_training.append((tot_dir, label))
-            for each_file in listdir(path+str(each_dir))[-test_per_category:]:
+            for each_file in os.listdir(path+str(each_dir))[-test_per_category:]:
                 tot_dir = str(path)+str(each_dir)+'/'+str(each_file)
                 file_list_testing.append((tot_dir, label))
             label += 1
