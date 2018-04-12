@@ -123,10 +123,10 @@ def LoadCaltech101(path, size=(100, 100), to_shuffle=True, test_per_category=5, 
     for each_dir in all_dir:
         if each_dir != '.DS_Store':
             for each_file in os.listdir(os.path.join(path, str(each_dir)))[0:-test_per_category]:
-                tot_dir = str(path)+str(each_dir)+'/'+str(each_file)
+                tot_dir = os.path.join(str(path), str(each_dir), str(each_file))
                 file_list_training.append((tot_dir, label))
-            for each_file in os.listdir(path+str(each_dir))[-test_per_category:]:
-                tot_dir = str(path)+str(each_dir)+'/'+str(each_file)
+            for each_file in os.listdir(os.path.join(path, str(each_dir)))[-test_per_category:]:
+                tot_dir = os.path.join(str(path), str(each_dir), str(each_file))
                 file_list_testing.append((tot_dir, label))
             label += 1
     if to_shuffle == True:
