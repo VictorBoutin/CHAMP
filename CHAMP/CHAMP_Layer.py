@@ -43,11 +43,13 @@ class CHAMP_Layer:
         return (torch.FloatTensor(code), dataset[1])
 
     def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,
-                    dico_init=None, seed=None, mode='Hebbian', thr=0.1):
+                    dico_init=None, seed=None, mode='Hebbian', thr=0.1, model="gaussian"):
         self.nb_epoch = nb_epoch
         self.eta = eta
         self.eta_homeo = eta_homeo
         self.mode = mode
+        self.model = model
+
         nb_channel = data_set[0].size()[2]
         if seed is not None:
             np.random.seed(seed)
@@ -78,7 +80,7 @@ class CHAMP_Layer:
                 if self.algo == 'MP':
                     return_fn = ConvMP_np(batch, self.dictionary,
                                           l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
-                                          doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=when, MatchingType=self.MatchingType)
+                                          doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=when, MatchingType=self.MatchingType, model=self.model)
                 elif self.algo == 'CoD':
                     raise NameError('NotImplementedYet')
                 elif self.algo == 'FISTA':
@@ -89,7 +91,7 @@ class CHAMP_Layer:
                 self.residual_image, self.code, res, nb_activation, self.where, self.when, self.how, self.energy = return_fn
                 if self.mode == 'Hebbian':
                     dictionary = learn(self.code, self.dictionary,
-                                       self.residual_image, self.eta, self.mask)
+                                       self.residual_image, self.eta, self.mask, model=self.model)
                 else:
                     raise NameError('mode' + self.mode + 'NotImplementedYet')
                 self.dictionary = torch.FloatTensor(dictionary)
@@ -119,23 +121,32 @@ def UpdateModulation(Modulation, activation, eta_homeo, how=None):
 
 def ConvMP_np(image_input, dictionary, l0_sparseness=2,
               modulation=None, verbose=0, train=True, doSym='pos', mask=None,
-              alpha=None, stride=1, when=None, MatchingType='all'):
+              alpha=None, stride=1, when=None, MatchingType='all', model="gaussian"):
+    # initialization of parameters
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
     nb_dico = dictionary.size()[0]
     padding = dico_shape[2] - stride
-    tic = time.time()
     if mask is None:
         mask = np.ones(dictionary.size())
+    # setting up convolution Neural Network
+    tic = time.time()
+    if model=="gaussian":
+        I_conv = conv(image_input, dictionary*torch.FloatTensor(mask), stride=stride)
+    if model=="binary":
+        p1 = image_input.mean()
+        surprise_input = -np.log2(image_input*p1 + (1-image_input)*(1-p1))
+        I_conv = conv(surprise_input, dictionary*torch.FloatTensor(mask), stride=stride)
+
     X_conv = conv(dictionary, dictionary, padding=padding, stride=stride)
     X_conv_size = X_conv.size()[-2:]
-    I_conv = conv(image_input, dictionary*torch.FloatTensor(mask), stride=stride)
     I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
     Conv_size = tuple(I_conv.size())
     I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
     X_conv = X_conv.numpy()
     I_conv_padded = I_conv_padded.numpy()
+    # intializing
     code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
     activation = np.zeros(nb_dico)
     dico = dictionary.numpy()
@@ -150,8 +161,10 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
         Mod = Mod.reshape(Conv_size[1] * Conv_size[2]*Conv_size[3])
     if train == True:
         residual_image = image_input.clone().numpy()
+    # beginning loop over batch of images
     for i_m in range(nb_image):
         Conv_one_image = I_conv_ravel[i_m, :]
+
         for i_l0 in range(l0_sparseness):
             if modulation is None:
                 Conv_Mod = Conv_one_image
@@ -168,7 +181,7 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
             if alpha is not None:
                 c_ind = alpha*c_ind
             code[i_m, indice[1], indice[2], indice[3]] += c_ind
-            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]] += -c_ind * X_conv[indice[1], :, :, :]
+            I_conv_padded[i_m, :, indice[2]:(indice[2] + X_conv_size[0]), indice[3]:(indice[3] + X_conv_size[1])] += -c_ind * X_conv[indice[1], :, :, :]
             Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-
                                            (X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
             activation[indice[1]] += 1
@@ -183,12 +196,12 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
                                * stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
                 where[indice[1], indice[2], indice[3]] += 1
             how[indice[1]] += c_ind
+
     activation[activation == 0] = 1
     if train == True:
         res = torch.mean(torch.norm(torch.FloatTensor(
             residual_image).view(nb_image, -1), p=2, dim=1))
         to_return = (residual_image, code, res, activation, where, when, how, energy)
-
     else:
         to_return = (code, activation)
     return to_return
