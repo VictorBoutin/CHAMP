@@ -42,7 +42,8 @@ class CHAMP_Layer:
             code[i, :, :, :, :] = code_one_batch
         return (torch.FloatTensor(code), dataset[1])
 
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,dico_init=None,seed=None,mode='Hebbian',thr=0.1):
+    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,
+                    dico_init=None, seed=None, mode='Hebbian', thr=0.1):
         self.nb_epoch = nb_epoch
         self.eta = eta
         self.eta_homeo = eta_homeo
@@ -82,12 +83,15 @@ class CHAMP_Layer:
                     raise NameError('NotImplementedYet')
                 elif self.algo == 'FISTA':
                     raise NameError('NotImplementedYet')
-
+                else:
+                    raise NameError('algo' + self.algo + 'NotImplementedYet')
 
                 self.residual_image, self.code, res, nb_activation, self.where, self.when, self.how, self.energy = return_fn
                 if self.mode == 'Hebbian':
                     dictionary = learn(self.code, self.dictionary,
-                                        self.residual_image, self.eta, self.mask)
+                                       self.residual_image, self.eta, self.mask)
+                else:
+                    raise NameError('mode' + self.mode + 'NotImplementedYet')
                 self.dictionary = torch.FloatTensor(dictionary)
                 self.dictionary = Normalize(self.dictionary)
                 self.res_list.append(res)
@@ -126,7 +130,7 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
         mask = np.ones(dictionary.size())
     X_conv = conv(dictionary, dictionary, padding=padding, stride=stride)
     X_conv_size = X_conv.size()[-2:]
-    I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
+    I_conv = conv(image_input, dictionary*torch.FloatTensor(mask), stride=stride)
     I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
     Conv_size = tuple(I_conv.size())
     I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
@@ -149,34 +153,37 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
     for i_m in range(nb_image):
         Conv_one_image = I_conv_ravel[i_m, :]
         for i_l0 in range(l0_sparseness):
-            if modulation is None :
+            if modulation is None:
                 Conv_Mod = Conv_one_image
             else:
                 Conv_Mod = Conv_one_image*Mod
             if MatchingType == 'all':
                 m_ind = np.argmax(Conv_Mod, axis=0)
             elif MatchingType == 'abs':
-                m_ind = np.argmax(np.abs(Conv_Mod),axis=0)
+                m_ind = np.argmax(np.abs(Conv_Mod), axis=0)
 
             m_value = Conv_one_image[m_ind]
             indice = np.unravel_index(m_ind, Conv_size)
-            c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
-            if alpha is not None :
+            c_ind = m_value/X_conv[indice[1], indice[1], X_conv_size[0]//2, X_conv_size[1]//2]
+            if alpha is not None:
                 c_ind = alpha*c_ind
             code[i_m, indice[1], indice[2], indice[3]] += c_ind
-            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= -c_ind * X_conv[indice[1], :, :, :]
-            Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-(X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
-            activation[indice[1]]+=1
-            how[indice[1]]+=c_ind
-            if when is not None :
-                when[indice[1],i_l0] += 1
-            if train == True :
-                a = residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]]
-                energy[indice[1]]+= np.linalg.norm(a.ravel(),2)
-                residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
-                where[indice[1],indice[2],indice[3]]+=1
-            how[indice[1]]+=c_ind
-    activation[activation==0]=1
+            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]] += -c_ind * X_conv[indice[1], :, :, :]
+            Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-
+                                           (X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
+            activation[indice[1]] += 1
+            how[indice[1]] += c_ind
+            if when is not None:
+                when[indice[1], i_l0] += 1
+            if train == True:
+                a = residual_image[i_m, :, indice[2]*stride:indice[2]*stride +
+                                   dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]]
+                energy[indice[1]] += np.linalg.norm(a.ravel(), 2)
+                residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]
+                               * stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
+                where[indice[1], indice[2], indice[3]] += 1
+            how[indice[1]] += c_ind
+    activation[activation == 0] = 1
     if train == True:
         res = torch.mean(torch.norm(torch.FloatTensor(
             residual_image).view(nb_image, -1), p=2, dim=1))
@@ -185,6 +192,7 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
     else:
         to_return = (code, activation)
     return to_return
+
 
 def learn(code, dictionary, residual, eta, mask):
     nb_dico = dictionary.size()[0]
