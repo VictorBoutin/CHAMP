@@ -103,7 +103,7 @@ class CHAMP_Layer:
                 if ((i_epoch + 1) % (self.nb_epoch // self.verbose)) == 0:
                     timing = time.time() - tic
                     print('epoch {0} - {1} done in {2}m{3}s'.format(first_epoch,
-                                                                    i_epoch + 1, int(timing // 60), int(timing % 60)))
+                           i_epoch + 1, int(timing // 60), int(timing % 60)))
                     tic, first_epoch = time.time(),  i_epoch + 1
             # DisplayDico(self.dictionary)
         return self.dictionary
