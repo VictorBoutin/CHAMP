@@ -45,11 +45,14 @@ class CHAMP_Layer:
             code[i, :, :, :, :] = code_one_batch
         return (torch.FloatTensor(code), dataset[1])
 
-    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,dico_init=None,seed=None,mode='Hebbian',thr=0.1):
+    def TrainLayer(self, data_set, eta=0.05, nb_epoch=2, eta_homeo=None, nb_record=4,
+                    dico_init=None, seed=None, mode='Hebbian', thr=0.1, model="gaussian"):
         self.nb_epoch = nb_epoch
         self.eta = eta
         self.eta_homeo = eta_homeo
         self.mode = mode
+        self.model = model
+
         nb_channel = data_set[0].size()[2]
         if seed is not None:
             np.random.seed(seed)
@@ -96,28 +99,21 @@ class CHAMP_Layer:
                 elif self.algo == 'MP_border':
                     return_fn = ConvMP_border(batch, self.dictionary,
                                           l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
-                                          doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=when, MatchingType=self.MatchingType)
+                                          doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=when, MatchingType=self.MatchingType, model=self.model)
                 elif self.algo == 'CoD':
                     raise NameError('NotImplementedYet')
                 elif self.algo == 'FISTA':
                     raise NameError('NotImplementedYet')
-                else :
-                    raise NameError('Enter a valid algorithm name')
+                else:
+                    raise NameError('algo' + self.algo + 'NotImplementedYet')
 
                 self.residual_image, self.code, res, nb_activation, self.where, self.when, self.how, self.energy = return_fn
-                if self.algo == 'MP_border':
-                    gradient,_ = gradient_patch(self.code,self.residual_image,self.dictionary)
-                    self.dictionary += self.eta*torch.FloatTensor(gradient)
-                else :
-                    if self.mode == 'Hebbian':
-                        dictionary = learn(self.code, self.dictionary,
-                                            self.residual_image, self.eta, self.mask)
-                    if self.mode == 'HebbianNoMask':
-                        dictionary = learnNoMask(self.code, self.dictionary,
-                                            self.residual_image, self.eta, self.mask)
-
-                    self.dictionary = torch.FloatTensor(dictionary)
-
+                if self.mode == 'Hebbian':
+                    dictionary = learn(self.code, self.dictionary,
+                                       self.residual_image, self.eta, self.mask, model=self.model)
+                else:
+                    raise NameError('mode' + self.mode + 'NotImplementedYet')
+                self.dictionary = torch.FloatTensor(dictionary)
                 self.dictionary = Normalize(self.dictionary)
                 self.res_list.append(res)
                 self.activation += nb_activation
@@ -128,7 +124,7 @@ class CHAMP_Layer:
                 if ((i_epoch + 1) % (self.nb_epoch // self.verbose)) == 0:
                     timing = time.time() - tic
                     print('epoch {0} - {1} done in {2}m{3}s'.format(first_epoch,
-                                                                    i_epoch + 1, int(timing // 60), int(timing % 60)))
+                           i_epoch + 1, int(timing // 60), int(timing % 60)))
                     tic, first_epoch = time.time(),  i_epoch + 1
             # DisplayDico(self.dictionary)
         return self.dictionary
@@ -146,23 +142,32 @@ def UpdateModulation(Modulation, activation, eta_homeo, how=None):
 
 def ConvMP_l0(image_input, dictionary, l0_sparseness=2,
               modulation=None, verbose=0, train=True, doSym='pos', mask=None,
-              alpha=None, stride=1, when=None, MatchingType='abs'):
+              alpha=None, stride=1, when=None, MatchingType='all', model="gaussian"):
+    # initialization of parameters
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
     nb_dico = dictionary.size()[0]
     padding = dico_shape[2] - stride
-    tic = time.time()
     if mask is None:
         mask = np.ones(dictionary.size())
+    # setting up convolution Neural Network
+    tic = time.time()
+    if model=="gaussian":
+        I_conv = conv(image_input, dictionary*torch.FloatTensor(mask), stride=stride)
+    if model=="binary":
+        p1 = image_input.mean()
+        surprise_input = -np.log2(image_input*p1 + (1-image_input)*(1-p1))
+        I_conv = conv(surprise_input, dictionary*torch.FloatTensor(mask), stride=stride)
+
     X_conv = conv(dictionary, dictionary, padding=padding, stride=stride)
     X_conv_size = X_conv.size()[-2:]
-    I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
     I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
     Conv_size = tuple(I_conv.size())
     I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
     X_conv = X_conv.numpy()
     I_conv_padded = I_conv_padded.numpy()
+    # intializing
     code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
     activation = np.zeros(nb_dico)
     dico = dictionary.numpy()
@@ -177,193 +182,53 @@ def ConvMP_l0(image_input, dictionary, l0_sparseness=2,
         Mod = Mod.reshape(Conv_size[1] * Conv_size[2]*Conv_size[3])
     if train == True:
         residual_image = image_input.clone().numpy()
+    # beginning loop over batch of images
     for i_m in range(nb_image):
         Conv_one_image = I_conv_ravel[i_m, :]
+
         for i_l0 in range(l0_sparseness):
-            if modulation is None :
+            if modulation is None:
                 Conv_Mod = Conv_one_image
             else:
                 Conv_Mod = Conv_one_image*Mod
             if MatchingType == 'all':
                 m_ind = np.argmax(Conv_Mod, axis=0)
             elif MatchingType == 'abs':
-                m_ind = np.argmax(np.abs(Conv_Mod),axis=0)
+                m_ind = np.argmax(np.abs(Conv_Mod), axis=0)
 
             m_value = Conv_one_image[m_ind]
             indice = np.unravel_index(m_ind, Conv_size)
-            c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
-            if alpha is not None :
+            c_ind = m_value/X_conv[indice[1], indice[1], X_conv_size[0]//2, X_conv_size[1]//2]
+            if alpha is not None:
                 c_ind = alpha*c_ind
             code[i_m, indice[1], indice[2], indice[3]] += c_ind
-            I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= -c_ind * X_conv[indice[1], :, :, :]
-            Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-(X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
-            activation[indice[1]]+=1
-            how[indice[1]]+=c_ind
-            if when is not None :
-                when[indice[1],i_l0] += 1
-            if train == True :
-                a = residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]]
-                energy[indice[1]]+= np.linalg.norm(a.ravel(),2)
-                residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
-                where[indice[1],indice[2],indice[3]]+=1
-            how[indice[1]]+=c_ind
-    activation[activation==0]=1
+            I_conv_padded[i_m, :, indice[2]:(indice[2] + X_conv_size[0]), indice[3]:(indice[3] + X_conv_size[1])] += -c_ind * X_conv[indice[1], :, :, :]
+            Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-
+                                           (X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
+            activation[indice[1]] += 1
+            how[indice[1]] += c_ind
+            if when is not None:
+                when[indice[1], i_l0] += 1
+            if train == True:
+                a = residual_image[i_m, :, indice[2]*stride:indice[2]*stride +
+                                   dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]]
+                energy[indice[1]] += np.linalg.norm(a.ravel(), 2)
+                residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]
+                               * stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
+                where[indice[1], indice[2], indice[3]] += 1
+            how[indice[1]] += c_ind
+
+    activation[activation == 0] = 1
     if train == True:
         res = torch.mean(torch.norm(torch.FloatTensor(
             residual_image).view(nb_image, -1), p=2, dim=1))
         to_return = (residual_image, code, res, activation, where, when, how, energy)
-
     else:
         to_return = (code, activation)
     return to_return
 
 
-def ConvMP_border(image_input, dictionary, l0_sparseness=2,
-              modulation=None, verbose=0, train=True, doSym='pos', mask=None,
-              alpha=None, stride=1, when=None, MatchingType='abs'):
-    nb_image = image_input.size()[0]
-    image_size = image_input.size()[2]
-    dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
-
-    nb_dico = dictionary.size()[0]
-    padding = dico_shape[2] - stride
-    code = np.zeros((nb_image, nb_dico, image_size+dico_shape[1]-1, image_size+dico_shape[2]-1))
-    tic = time.time()
-    if mask is None:
-        mask = np.ones(dictionary.size())
-    Xcorr = conv(dictionary, dictionary, padding=padding, stride=stride).numpy()
-    sh  = Xcorr.shape[-1]//2
-    sh_re = dico_shape[-1]//2
-    Corr = conv(image_input, dictionary*torch.FloatTensor(mask),padding=Xcorr.shape[-1]//2,stride=stride).numpy()
-    mask_pad = np.ones_like(Corr[0,:,:,:]).astype(bool)
-    mask_pad[:,sh:-sh,sh:-sh] = False
-    #I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
-    #Conv_size = tuple(I_conv.size())
-    #I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-    #X_conv = X_conv.numpy()
-    #I_conv_padded = I_conv_padded.numpy()
-    #code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
-    activation = np.zeros(nb_dico)
-    dico = dictionary.numpy()
-    where = np.zeros((nb_dico, Corr.shape[-2], Corr.shape[-1]))
-    how = np.zeros((nb_dico))
-    energy = np.zeros((nb_dico))
-    #if modulation is None:
-    #    modulation = np.ones(nb_dico)
-    #if modulation is not None:
-    #    Mod = modulation[:, np.newaxis, np.newaxis] * \
-    #        np.ones((Conv_size[1], Conv_size[2], Conv_size[3]))
-    #    Mod = Mod.reshape(Conv_size[1] * Conv_size[2]*Conv_size[3])
-    if train == True:
-        residual_image = image_input.clone().numpy()
-    for i_m in range(nb_image):
-        #Conv_one_image = I_conv_ravel[i_m, :]
-        c = Corr[i_m,:,:,:].copy()
-        for i_l0 in range(l0_sparseness):
-            ind = np.unravel_index(np.argmax(np.abs(c)),c.shape)
-            c_ind = c[ind]/ Xcorr[ind[0],ind[0],Xcorr.shape[-2]//2, Xcorr.shape[-1]//2]
-            #print('\n')
-            #print(ind)
-            #print('[',ind[1]-sh,':',ind[1]+sh+1,',',ind[2]-sh,':',ind[2]+sh+1,']')
-            c[:,ind[1]-sh:ind[1]+sh+1,ind[2]-sh:ind[2]+sh+1] -= c_ind*Xcorr[ind[0],:,:,:]
-            code[i_m,ind[0],ind[1],ind[2]]+=c_ind
-            c[mask_pad] = 0
-            activation[ind[0]]+=1
-            how[ind[0]]+=c_ind
-            if when is not None :
-                when[ind[0],i_l0] += 1
-            if train == True :
-                a = residual_image[i_m, :, ind[1]-sh_re-dico_shape[1]//2:ind[1]-sh_re+(dico_shape[1]//2)+1,ind[2]-sh_re-(dico_shape[1]//2):ind[2]-sh_re+(dico_shape[2]//2)+1]
-                energy[ind[0]]+= np.linalg.norm(a.ravel(),2)
-                #print('[',ind[1]-sh_re-dico_shape[1]//2,':',ind[1]-sh_re+(dico_shape[1]//2)+1,',',ind[2]-sh_re-(dico_shape[1]//2),':',ind[2]-sh_re+(dico_shape[2]//2)+1,']')
-                residual_image[i_m, :, ind[1]-sh_re-dico_shape[1]//2:ind[1]-sh_re+(dico_shape[1]//2)+1,ind[2]-sh_re-(dico_shape[1]//2):ind[2]-sh_re+(dico_shape[2]//2)+1] -= c_ind * dico[ind[0], :, :, :]
-                where[ind[0],ind[1],ind[2]]+=1
-            how[ind[0]]+=c_ind
-    #activation[activation==0]=1
-    if train == True:
-        res = torch.mean(torch.norm(torch.FloatTensor(
-            residual_image).view(nb_image, -1), p=2, dim=1))
-        to_return = (residual_image, code, res, activation, where, when, how, energy)
-
-    else:
-        to_return = (code, activation)
-    return to_return
-
-
-def ConvMP_Cv(image_input, dictionary, threshold=1.2,
-              modulation=None, verbose=0, train=True, doSym='pos', mask=None,
-              alpha=None, stride=1, when=None, MatchingType='abs'):
-        nb_image = image_input.size()[0]
-        image_size = image_input.size()[2]
-        dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
-        nb_dico = dictionary.size()[0]
-        padding = dico_shape[2] - stride
-        tic = time.time()
-        if mask is None:
-            mask = np.ones(dictionary.size())
-        X_conv = conv(dictionary, dictionary, padding=padding, stride=stride)
-        X_conv_size = X_conv.size()[-2:]
-        I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
-        I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
-        Conv_size = tuple(I_conv.size())
-        I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
-        X_conv = X_conv.numpy()
-        I_conv_padded = I_conv_padded.numpy()
-        code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
-        activation = np.zeros(nb_dico)
-        dico = dictionary.numpy()
-        where = np.zeros((nb_dico, Conv_size[-2], Conv_size[-1]))
-        how = np.zeros((nb_dico))
-        energy = np.zeros((nb_dico))
-        if modulation is not None:
-            Mod = modulation[:, np.newaxis, np.newaxis] * \
-                np.ones((Conv_size[1], Conv_size[2], Conv_size[3]))
-            Mod = Mod.reshape(Conv_size[1] * Conv_size[2]*Conv_size[3])
-        if train == True:
-            residual_image = image_input.clone().numpy()
-        for i_m in range(nb_image):
-            Conv_one_image = I_conv_ravel[i_m, :]
-            criteria = 10
-            while criteria > threshold:
-            #for i_l0 in range(l0_sparseness):
-                if modulation is None :
-                    Conv_Mod = Conv_one_image
-                else:
-                    Conv_Mod = Conv_one_image*Mod
-                if MatchingType == 'all':
-                    m_ind = np.argmax(Conv_Mod, axis=0)
-                elif MatchingType == 'abs':
-                    m_ind = np.argmax(np.abs(Conv_Mod),axis=0)
-                m_value = Conv_one_image[m_ind]
-                indice = np.unravel_index(m_ind, Conv_size)
-                c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
-                if alpha is not None :
-                    c_ind = alpha*c_ind
-                code[i_m, indice[1], indice[2], indice[3]] += c_ind
-                I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= -c_ind * X_conv[indice[1], :, :, :]
-                Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-(X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
-                activation[indice[1]]+=1
-                if when is not None :
-                    when[indice[1],i_l0] += 1
-                if train == True :
-                    a = residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]]
-                    energy[indice[1]]+= np.linalg.norm(a.ravel(),2)
-                    residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
-                    where[indice[1],indice[2],indice[3]]+=1
-                how[indice[1]]+=c_ind
-                criteria = np.abs(c_ind)
-        activation[activation==0]=1
-        if train == True:
-            res = torch.mean(torch.norm(torch.FloatTensor(
-                residual_image).view(nb_image, -1), p=2, dim=1))
-            to_return = (residual_image, code, res, activation, where, when, how, energy)
-
-        else:
-            to_return = (code, activation)
-        return to_return
-
-
-def learn(code, dictionary, residual, eta, mask):
+def learn(code, dictionary, residual, eta, mask, model="gaussian"):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1], dictionary.size()[2], dictionary.size()[3])
     for idx_dico in range(nb_dico):
@@ -403,6 +268,7 @@ def gradient_patch(code,residual,dico):
         else  :
             all_patches = 'No code'
     return gradient, all_patches
+
 def learnNoMask(code, dictionary, residual, eta, mask):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1], dictionary.size()[2], dictionary.size()[3])
