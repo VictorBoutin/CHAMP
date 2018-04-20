@@ -92,7 +92,9 @@ def Rebuilt(code, dico_in, idx=None, groups=1, stride=1):
     dico = dico_in.clone()
     if idx is not None:
         dico[idx, :, :, :] = 0
-    dico = dico.permute(1, 0, 2, 3)
+    if groups == 1:
+        dico = dico.permute(1, 0, 2, 3)
+        
     dico_rotated = RotateDico90(dico)
     padding = dico.size()[-1]-1
     output = conv(code, dico_rotated, padding=padding, groups=groups, stride=stride)
