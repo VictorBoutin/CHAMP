@@ -29,11 +29,30 @@ def LocalContrastNormalization(training_set,sigma=0.5,filter_size=(9,9)):
     data = training_set[0].numpy()
     output = np.zeros_like(data)
     gaussian_window = GenerateMask((1,data.shape[2],filter_size[0],filter_size[1]),sigma=sigma).contiguous()
+    somme = torch.sum(gaussian_window.view(1*data.shape[2],filter_size[0]*filter_size[1]),dim=1).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(gaussian_window)
+    gaussian_window /= somme
+    for i in range(data.shape[0]):
+        data_padded = padTensor(training_set[0][i],filter_size[0]//2,mode='reflect')
+        te = conv(data_padded,gaussian_window)
+        output[i] = data[i,:,:,:,:]-te
+        data_padded = padTensor(torch.FloatTensor(output[i]),filter_size[0]//2,mode='reflect')
+        sig = torch.pow(conv(torch.pow(data_padded,2),gaussian_window),1/2)
+        mean_sig = torch.mean(sig.view(-1,sig.size()[1]*sig.size()[2]*sig.size()[3]),dim=1)
+        mean_sig = mean_sig.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(sig)
+        normalized_coeff = torch.max(mean_sig,sig)
+        output[i]/=normalized_coeff
+    return (torch.FloatTensor(output),training_set[1]),te,normalized_coeff,gaussian_window
+
+def oldLocalContrastNormalization(training_set,sigma=0.5,filter_size=(9,9)):
+    data = training_set[0].numpy()
+    output = np.zeros_like(data)
+    gaussian_window = GenerateMask((1,data.shape[2],filter_size[0],filter_size[1]),sigma=sigma).contiguous()
+    #somme = torch.sum(gaussian_window.view(1*data.shape[2],filter_size[0]*filter_size[1]),dim=1).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(gaussian_window)
     gaussian_window /= torch.sum(gaussian_window.view(-1,data.shape[2]*filter_size[0]*filter_size[1]),dim=1)
     for i in range(data.shape[0]):
         data_padded = padTensor(training_set[0][i],filter_size[0]//2,mode='reflect')
         te = conv(data_padded,gaussian_window)
-        output[i] = data[i,:,:,:,:]-conv(data_padded,gaussian_window)
+        output[i] = data[i,:,:,:,:]-te
         data_padded = padTensor(torch.FloatTensor(output[i]),filter_size[0]//2,mode='reflect')
         sig = torch.pow(conv(torch.pow(data_padded,2),gaussian_window),1/2)
         mean_sig = torch.mean(sig.view(-1,sig.size()[1]*sig.size()[2]*sig.size()[3]),dim=1)
@@ -77,16 +96,6 @@ def Rebuilt(code, dico_in, idx=None, groups=1, stride=1):
     dico_rotated = RotateDico90(dico)
     padding = dico.size()[-1]-1
     output = conv(code, dico_rotated, padding=padding, groups=groups, stride=stride)
-    return output
-
-def Rebuilt2(code,dico_in,idx=None,groups=1,stride=1):
-    dico = dico_in.clone()
-    if idx is not None :
-        dico[idx,:,:,:]=0
-    dico = dico.permute(1,0,2,3)
-    dico_rotated = RotateDico90(dico)
-    padding = dico.size()[-1]-1
-    output = conv(code,dico_rotated,padding=0,groups=groups,stride=stride)
     return output
 
 def GenerateMask(full_size, sigma=0.8, style='Gaussian',start_R=10):
