@@ -11,8 +11,8 @@ from scipy.sparse.linalg import svds
 
 
 class CHAMP_Layer:
-    def __init__(self, l0_sparseness=10, nb_dico=30, dico_size=(13, 13),
-                 verbose=0, doSym=False, alpha=None, mask=None, stride=1, MatchingType='all', algo='MP'):
+    def __init__(self, l0_sparseness=None, threshold=None, nb_dico=30, dico_size=(13, 13),
+                 verbose=0, doSym=False, alpha=None, mask=None, stride=1, MatchingType='abs', algo='MP'):
 
         self.nb_dico = nb_dico
         self.dico_size = dico_size
@@ -26,6 +26,9 @@ class CHAMP_Layer:
         self.stride = stride
         self.MatchingType = MatchingType
         self.algo = algo
+        if (l0_sparseness is None) and (threshold is not None) and (algo == 'MP'):
+            self.thr = threshold
+            self.algo = 'MP_conv'
         #self.do_mask = do_mask
 
     def RunLayer(self, dataset, dictionary=None):
@@ -53,6 +56,11 @@ class CHAMP_Layer:
         if dico_init is None:
             self.dictionary = np.random.rand(
                 self.nb_dico, nb_channel, self.dico_size[0], self.dico_size[1])
+            #print('\n')
+            #print('dico with seed : {0}, mean : {1}, std :{2}'.format(seed, np.mean(self.dictionary,axis=(1,2,3)), np.std(self.dictionary,axis=(1,2,3))))
+            #print('dico with seed : {0}, max : {1} min : {2}'.format(seed, np.max(self.dictionary, axis=(1,2,3)), np.min(self.dictionary,axis=(1,2,3))))
+
+            #self.dictionary = Normalize(torch.FloatTensor(self.dictionary))
         else:
             self.dictionary = dico_init
         if self.mask is None:
@@ -71,24 +79,45 @@ class CHAMP_Layer:
         tic = time.time()
         first_epoch = 1
         for i_epoch in range(self.nb_epoch):
-            when = np.zeros((self.nb_dico, self.l0_sparseness))
+            if self.algo == 'MP':
+                when = np.zeros((self.nb_dico, self.l0_sparseness))
+            else :
+                when = None
             self.activation = np.zeros(self.nb_dico)
             for idx_batch, batch in enumerate(data_set[0]):
                 if self.algo == 'MP':
-                    return_fn = ConvMP_np(batch, self.dictionary,
+                    return_fn = ConvMP_l0(batch, self.dictionary,
+                                          l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
+                                          doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=when, MatchingType=self.MatchingType)
+                elif self.algo == 'MP_conv':
+                    return_fn = ConvMP_Cv(batch, self.dictionary,
+                                          threshold=self.thr, modulation=modulation, verbose=self.verbose, train=True,
+                                          doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=None, MatchingType=self.MatchingType)
+                elif self.algo == 'MP_border':
+                    return_fn = ConvMP_border(batch, self.dictionary,
                                           l0_sparseness=self.l0_sparseness, modulation=modulation, verbose=self.verbose, train=True,
                                           doSym=self.doSym, mask=self.mask, alpha=self.alpha, stride=self.stride, when=when, MatchingType=self.MatchingType)
                 elif self.algo == 'CoD':
                     raise NameError('NotImplementedYet')
                 elif self.algo == 'FISTA':
                     raise NameError('NotImplementedYet')
-
+                else :
+                    raise NameError('Enter a valid algorithm name')
 
                 self.residual_image, self.code, res, nb_activation, self.where, self.when, self.how, self.energy = return_fn
-                if self.mode == 'Hebbian':
-                    dictionary = learn(self.code, self.dictionary,
-                                        self.residual_image, self.eta, self.mask)
-                self.dictionary = torch.FloatTensor(dictionary)
+                if self.algo == 'MP_border':
+                    gradient,_ = gradient_patch(self.code,self.residual_image,self.dictionary)
+                    self.dictionary += self.eta*torch.FloatTensor(gradient)
+                else :
+                    if self.mode == 'Hebbian':
+                        dictionary = learn(self.code, self.dictionary,
+                                            self.residual_image, self.eta, self.mask)
+                    if self.mode == 'HebbianNoMask':
+                        dictionary = learnNoMask(self.code, self.dictionary,
+                                            self.residual_image, self.eta, self.mask)
+
+                    self.dictionary = torch.FloatTensor(dictionary)
+
                 self.dictionary = Normalize(self.dictionary)
                 self.res_list.append(res)
                 self.activation += nb_activation
@@ -106,6 +135,8 @@ class CHAMP_Layer:
 
 
 def UpdateModulation(Modulation, activation, eta_homeo, how=None):
+    print('activation',activation)
+    print('Modulation', Modulation)
     target = np.mean(activation)
     tau = - (np.max(activation)-target)/np.log(0.1)
     modulation_function = np.exp((1-eta_homeo)*np.log(Modulation) -
@@ -113,9 +144,9 @@ def UpdateModulation(Modulation, activation, eta_homeo, how=None):
     return modulation_function
 
 
-def ConvMP_np(image_input, dictionary, l0_sparseness=2,
+def ConvMP_l0(image_input, dictionary, l0_sparseness=2,
               modulation=None, verbose=0, train=True, doSym='pos', mask=None,
-              alpha=None, stride=1, when=None, MatchingType='all'):
+              alpha=None, stride=1, when=None, MatchingType='abs'):
     nb_image = image_input.size()[0]
     image_size = image_input.size()[2]
     dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
@@ -186,6 +217,152 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
         to_return = (code, activation)
     return to_return
 
+
+def ConvMP_border(image_input, dictionary, l0_sparseness=2,
+              modulation=None, verbose=0, train=True, doSym='pos', mask=None,
+              alpha=None, stride=1, when=None, MatchingType='abs'):
+    nb_image = image_input.size()[0]
+    image_size = image_input.size()[2]
+    dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
+
+    nb_dico = dictionary.size()[0]
+    padding = dico_shape[2] - stride
+    code = np.zeros((nb_image, nb_dico, image_size+dico_shape[1]-1, image_size+dico_shape[2]-1))
+    tic = time.time()
+    if mask is None:
+        mask = np.ones(dictionary.size())
+    Xcorr = conv(dictionary, dictionary, padding=padding, stride=stride).numpy()
+    sh  = Xcorr.shape[-1]//2
+    sh_re = dico_shape[-1]//2
+    Corr = conv(image_input, dictionary*torch.FloatTensor(mask),padding=Xcorr.shape[-1]//2,stride=stride).numpy()
+    mask_pad = np.ones_like(Corr[0,:,:,:]).astype(bool)
+    mask_pad[:,sh:-sh,sh:-sh] = False
+    #I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
+    #Conv_size = tuple(I_conv.size())
+    #I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+    #X_conv = X_conv.numpy()
+    #I_conv_padded = I_conv_padded.numpy()
+    #code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
+    activation = np.zeros(nb_dico)
+    dico = dictionary.numpy()
+    where = np.zeros((nb_dico, Corr.shape[-2], Corr.shape[-1]))
+    how = np.zeros((nb_dico))
+    energy = np.zeros((nb_dico))
+    #if modulation is None:
+    #    modulation = np.ones(nb_dico)
+    #if modulation is not None:
+    #    Mod = modulation[:, np.newaxis, np.newaxis] * \
+    #        np.ones((Conv_size[1], Conv_size[2], Conv_size[3]))
+    #    Mod = Mod.reshape(Conv_size[1] * Conv_size[2]*Conv_size[3])
+    if train == True:
+        residual_image = image_input.clone().numpy()
+    for i_m in range(nb_image):
+        #Conv_one_image = I_conv_ravel[i_m, :]
+        c = Corr[i_m,:,:,:].copy()
+        for i_l0 in range(l0_sparseness):
+            ind = np.unravel_index(np.argmax(np.abs(c)),c.shape)
+            c_ind = c[ind]/ Xcorr[ind[0],ind[0],Xcorr.shape[-2]//2, Xcorr.shape[-1]//2]
+            #print('\n')
+            #print(ind)
+            #print('[',ind[1]-sh,':',ind[1]+sh+1,',',ind[2]-sh,':',ind[2]+sh+1,']')
+            c[:,ind[1]-sh:ind[1]+sh+1,ind[2]-sh:ind[2]+sh+1] -= c_ind*Xcorr[ind[0],:,:,:]
+            code[i_m,ind[0],ind[1],ind[2]]+=c_ind
+            c[mask_pad] = 0
+            activation[ind[0]]+=1
+            how[ind[0]]+=c_ind
+            if when is not None :
+                when[ind[0],i_l0] += 1
+            if train == True :
+                a = residual_image[i_m, :, ind[1]-sh_re-dico_shape[1]//2:ind[1]-sh_re+(dico_shape[1]//2)+1,ind[2]-sh_re-(dico_shape[1]//2):ind[2]-sh_re+(dico_shape[2]//2)+1]
+                energy[ind[0]]+= np.linalg.norm(a.ravel(),2)
+                #print('[',ind[1]-sh_re-dico_shape[1]//2,':',ind[1]-sh_re+(dico_shape[1]//2)+1,',',ind[2]-sh_re-(dico_shape[1]//2),':',ind[2]-sh_re+(dico_shape[2]//2)+1,']')
+                residual_image[i_m, :, ind[1]-sh_re-dico_shape[1]//2:ind[1]-sh_re+(dico_shape[1]//2)+1,ind[2]-sh_re-(dico_shape[1]//2):ind[2]-sh_re+(dico_shape[2]//2)+1] -= c_ind * dico[ind[0], :, :, :]
+                where[ind[0],ind[1],ind[2]]+=1
+            how[ind[0]]+=c_ind
+    #activation[activation==0]=1
+    if train == True:
+        res = torch.mean(torch.norm(torch.FloatTensor(
+            residual_image).view(nb_image, -1), p=2, dim=1))
+        to_return = (residual_image, code, res, activation, where, when, how, energy)
+
+    else:
+        to_return = (code, activation)
+    return to_return
+
+
+def ConvMP_Cv(image_input, dictionary, threshold=1.2,
+              modulation=None, verbose=0, train=True, doSym='pos', mask=None,
+              alpha=None, stride=1, when=None, MatchingType='abs'):
+        nb_image = image_input.size()[0]
+        image_size = image_input.size()[2]
+        dico_shape = tuple((dictionary.size()[1], dictionary.size()[2], dictionary.size()[3]))
+        nb_dico = dictionary.size()[0]
+        padding = dico_shape[2] - stride
+        tic = time.time()
+        if mask is None:
+            mask = np.ones(dictionary.size())
+        X_conv = conv(dictionary, dictionary, padding=padding, stride=stride)
+        X_conv_size = X_conv.size()[-2:]
+        I_conv = conv(image_input, dictionary*torch.FloatTensor(mask),stride=stride)
+        I_conv_padded = padTensor(I_conv, padding=X_conv_size[0]//2)
+        Conv_size = tuple(I_conv.size())
+        I_conv_ravel = I_conv.numpy().reshape(-1, Conv_size[1] * Conv_size[2] * Conv_size[3])
+        X_conv = X_conv.numpy()
+        I_conv_padded = I_conv_padded.numpy()
+        code = np.zeros((nb_image, nb_dico, Conv_size[2], Conv_size[3]))
+        activation = np.zeros(nb_dico)
+        dico = dictionary.numpy()
+        where = np.zeros((nb_dico, Conv_size[-2], Conv_size[-1]))
+        how = np.zeros((nb_dico))
+        energy = np.zeros((nb_dico))
+        if modulation is not None:
+            Mod = modulation[:, np.newaxis, np.newaxis] * \
+                np.ones((Conv_size[1], Conv_size[2], Conv_size[3]))
+            Mod = Mod.reshape(Conv_size[1] * Conv_size[2]*Conv_size[3])
+        if train == True:
+            residual_image = image_input.clone().numpy()
+        for i_m in range(nb_image):
+            Conv_one_image = I_conv_ravel[i_m, :]
+            criteria = 10
+            while criteria > threshold:
+            #for i_l0 in range(l0_sparseness):
+                if modulation is None :
+                    Conv_Mod = Conv_one_image
+                else:
+                    Conv_Mod = Conv_one_image*Mod
+                if MatchingType == 'all':
+                    m_ind = np.argmax(Conv_Mod, axis=0)
+                elif MatchingType == 'abs':
+                    m_ind = np.argmax(np.abs(Conv_Mod),axis=0)
+                m_value = Conv_one_image[m_ind]
+                indice = np.unravel_index(m_ind, Conv_size)
+                c_ind = m_value/X_conv[indice[1],indice[1],X_conv_size[0]//2, X_conv_size[1]//2]
+                if alpha is not None :
+                    c_ind = alpha*c_ind
+                code[i_m, indice[1], indice[2], indice[3]] += c_ind
+                I_conv_padded[i_m, :, indice[2]:indice[2] + X_conv_size[0], indice[3]:indice[3] + X_conv_size[1]]+= -c_ind * X_conv[indice[1], :, :, :]
+                Conv_one_image = I_conv_padded[i_m, :, X_conv_size[0]//2:-(X_conv_size[0]//2), X_conv_size[1]//2:-(X_conv_size[1]//2)].reshape(-1)
+                activation[indice[1]]+=1
+                if when is not None :
+                    when[indice[1],i_l0] += 1
+                if train == True :
+                    a = residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]]
+                    energy[indice[1]]+= np.linalg.norm(a.ravel(),2)
+                    residual_image[i_m, :, indice[2]*stride:indice[2]*stride + dico_shape[1], indice[3]*stride:indice[3]*stride + dico_shape[2]] -= c_ind * dico[indice[1], :, :, :]
+                    where[indice[1],indice[2],indice[3]]+=1
+                how[indice[1]]+=c_ind
+                criteria = np.abs(c_ind)
+        activation[activation==0]=1
+        if train == True:
+            res = torch.mean(torch.norm(torch.FloatTensor(
+                residual_image).view(nb_image, -1), p=2, dim=1))
+            to_return = (residual_image, code, res, activation, where, when, how, energy)
+
+        else:
+            to_return = (code, activation)
+        return to_return
+
+
 def learn(code, dictionary, residual, eta, mask):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1], dictionary.size()[2], dictionary.size()[3])
@@ -200,6 +377,45 @@ def learn(code, dictionary, residual, eta, mask):
                                  dico_size[1], loc_col[idx]:loc_col[idx]+dico_size[2]]
                 all_patches[idx, :, :, :] = act_c[idx]*(patch*mask[idx_dico, :, :, :]-act_c[idx]
                                                         * dictionary[idx_dico, :, :, :].numpy()*(1-mask[idx_dico, :, :, :]))
+            gradient = np.sum(all_patches, axis=0)
+            gradient -= gradient.mean()
+            gradient = torch.FloatTensor(gradient)
+            gradient = Normalize(gradient.unsqueeze(0))[0, :, :, :]
+            dictionary[idx_dico, :, :, :].add_(eta*gradient)
+    dictionary = Normalize(dictionary)
+    return dictionary
+
+def gradient_patch(code,residual,dico):
+    nb_dico = dico.size()[0]
+    dico_size = (dico.size()[1],dico.size()[2],dico.size()[3])
+    sh = dico_size[-1]//2
+    gradient = np.zeros(dico.size())
+    for idx_dico in range(nb_dico):
+        mask_code = code[:,idx_dico,:,:]!=0
+        loc_im,loc_line,loc_col = np.where(mask_code)
+        if len(loc_im) != 0:
+            all_patches = np.zeros((len(loc_im),dico_size[0],dico_size[1],dico_size[2]))
+            act_c = code[:,idx_dico,:,:][mask_code]
+            for idx in range(len(loc_im)) :
+                patch = residual[loc_im[idx],:,loc_line[idx]-sh-dico_size[1]//2:loc_line[idx]-sh+(dico_size[1]//2)+1,loc_col[idx]-sh-(dico_size[2]//2):loc_col[idx]-sh+(dico_size[2]//2)+1]
+                all_patches[idx,:,:,:] = act_c[idx]*patch
+            gradient[idx_dico,:,:,:] = np.mean(all_patches, axis=0)
+        else  :
+            all_patches = 'No code'
+    return gradient, all_patches
+def learnNoMask(code, dictionary, residual, eta, mask):
+    nb_dico = dictionary.size()[0]
+    dico_size = (dictionary.size()[1], dictionary.size()[2], dictionary.size()[3])
+    for idx_dico in range(nb_dico):
+        mask_code = code[:, idx_dico, :, :] != 0
+        loc_image, loc_line, loc_col = np.where(mask_code)
+        if len(loc_image) != 0:
+            all_patches = np.zeros((len(loc_image), dico_size[0], dico_size[1], dico_size[2]))
+            act_c = code[:, idx_dico, :, :][mask_code]
+            for idx in range(len(loc_image)):
+                patch = residual[loc_image[idx], :, loc_line[idx]:loc_line[idx] +
+                                 dico_size[1], loc_col[idx]:loc_col[idx]+dico_size[2]]
+                all_patches[idx, :, :, :] = act_c[idx]*patch
             gradient = np.sum(all_patches, axis=0)
             gradient -= gradient.mean()
             gradient = torch.FloatTensor(gradient)
