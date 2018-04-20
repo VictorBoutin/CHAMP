@@ -207,7 +207,7 @@ def ConvMP_np(image_input, dictionary, l0_sparseness=2,
     return to_return
 
 
-def learn(code, dictionary, residual, eta, mask):
+def learn(code, dictionary, residual, eta, mask, model="gaussian"):
     nb_dico = dictionary.size()[0]
     dico_size = (dictionary.size()[1], dictionary.size()[2], dictionary.size()[3])
     for idx_dico in range(nb_dico):
