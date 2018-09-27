@@ -33,13 +33,13 @@ def LocalContrastNormalization(training_set,sigma=0.5,filter_size=(9,9)):
     gaussian_window /= somme
     for i in range(data.shape[0]):
         data_padded = padTensor(training_set[0][i],filter_size[0]//2,mode='reflect')
-        te = conv(data_padded,gaussian_window)
+        te = conv(data_padded, gaussian_window).numpy()
         output[i] = data[i,:,:,:,:]-te
         data_padded = padTensor(torch.FloatTensor(output[i]),filter_size[0]//2,mode='reflect')
         sig = torch.pow(conv(torch.pow(data_padded,2),gaussian_window),1/2)
         mean_sig = torch.mean(sig.view(-1,sig.size()[1]*sig.size()[2]*sig.size()[3]),dim=1)
         mean_sig = mean_sig.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(sig)
-        normalized_coeff = torch.max(mean_sig,sig)
+        normalized_coeff = torch.max(mean_sig,sig).numpy()
         output[i]/=normalized_coeff
     return (torch.FloatTensor(output),training_set[1]),te,normalized_coeff,gaussian_window
 
@@ -94,7 +94,7 @@ def Rebuilt(code, dico_in, idx=None, groups=1, stride=1):
         dico[idx, :, :, :] = 0
     if groups == 1:
         dico = dico.permute(1, 0, 2, 3)
-        
+
     dico_rotated = RotateDico90(dico)
     padding = dico.size()[-1]-1
     output = conv(code, dico_rotated, padding=padding, groups=groups, stride=stride)
@@ -110,7 +110,7 @@ def GenerateMask(full_size, sigma=0.8, style='Gaussian',start_R=10):
     # print(grid)
     X_grid = grid.unsqueeze(1).expand((dico_size[-2], dico_size[-1]))
     Y_grid = torch.t(X_grid)
-    radius = torch.sqrt(X_grid**2 + Y_grid**2)
+    radius = torch.sqrt((X_grid**2 + Y_grid**2).float())
     if style == 'Gaussian':
         mask = torch.exp(-0.5*radius**2/R**2/sigma**2)
     elif style == 'Binary':

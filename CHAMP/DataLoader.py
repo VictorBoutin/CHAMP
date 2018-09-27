@@ -91,10 +91,13 @@ def LoadFaceDB(path, size=(68, 68), to_shuffle=True):
     label = 0
     for each_dir in os.listdir(path):
         if each_dir != '.DS_Store':
-            for each_file in os.listdir(os.path.join(path, str(each_dir))):
-                tot_dir = os.path.join(str(path), str(each_dir), str(each_file))
-                file_list.append((tot_dir, label))
-            label += 1
+            try:
+                for each_file in os.listdir(os.path.join(path, str(each_dir))):
+                    tot_dir = os.path.join(str(path), str(each_dir), str(each_file))
+                    file_list.append((tot_dir, label))
+                label += 1
+            except:
+                pass
     if to_shuffle == True:
         shuffle(file_list)
     idx = 0
