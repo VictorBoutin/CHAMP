@@ -2,7 +2,6 @@ import torch
 from torch.autograd import Variable
 from torch.nn.functional import conv2d
 import pickle
-import cv2
 import math
 from CHAMP.LowLevel import conv, Normalize, padTensor, RotateDico90
 import numpy as np
@@ -64,6 +63,8 @@ def oldLocalContrastNormalization(training_set,sigma=0.5,filter_size=(9,9)):
 
 def GenerateGabor(nb_dico, dico_size, sigma=1, lambd=5, gamma=0.5, psi=0, GPU=False):
     dico_size = tuple(dico_size)
+    import cv2
+
     params = {'ksize': dico_size, 'sigma': sigma, 'lambd': lambd,
               'gamma': 0.5, 'psi': psi, 'ktype': cv2.CV_32F}
     if GPU == True:
